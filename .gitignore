@@ -1,0 +1,34 @@
+# Build & Output
+bin/
+obj/
+publish/
+[Dd]ebug/
+[Rr]elease/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# IDE & Tooling
+.vs/
+.idea/
+.vscode/
+*.swp
+*~
+
+# Data & Storage Isolation (AGENT requirement: no music scores in git)
+data/songs/
+data/logs/
+data/snapshots/
+data/cache/
+data/*.db
+config/config.json
+
+# Local artifacts
+*.log
+*.old
+*.bak
+.git.bak/
+*.onnx
+Assets/Model/
+Assets/Models/

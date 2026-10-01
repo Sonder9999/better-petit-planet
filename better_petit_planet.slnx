@@ -1,0 +1,17 @@
+<Solution>
+  <Folder Name="/Test/">
+    <Project Path="Test/BetterPetitPlanet.Test/BetterPetitPlanet.Test.csproj">
+      <Platform Project="x64" />
+    </Project>
+  </Folder>
+  <Project Path="BetterPetitPlanet/BetterPetitPlanet.csproj">
+    <Platform Project="x64" />
+  </Project>
+  <Project Path="BetterPetitPlanet.GameCapture/BetterPetitPlanet.GameCapture.csproj" />
+  <Project Path="BetterPetitPlanet.HotkeyCapture/BetterPetitPlanet.HotkeyCapture.csproj">
+    <Platform Project="x64" />
+  </Project>
+  <Project Path="BetterPetitPlanet.WindowsInput/BetterPetitPlanet.WindowsInput.csproj">
+    <Platform Project="x64" />
+  </Project>
+</Solution>
