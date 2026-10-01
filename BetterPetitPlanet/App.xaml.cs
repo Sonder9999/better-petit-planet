@@ -52,6 +52,7 @@ public partial class App : Application
             // Core & Process
             services.AddSingleton<IConfigService, ConfigService>();
             services.AddSingleton<GameProcessDetector>();
+            services.AddSingleton<BetterPetitPlanet.Core.Web.OfficialCoverService>();
             services.AddSingleton<TaskTriggerDispatcher>();
             services.AddSingleton<GameTaskManager>();
 

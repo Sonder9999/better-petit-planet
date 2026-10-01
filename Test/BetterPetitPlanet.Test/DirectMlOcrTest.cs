@@ -12,7 +12,7 @@ public class DirectMlOcrTest
     [Fact]
     public void Recognize_PickPngSample_DetectsPickText()
     {
-        string samplePath = @"D:\Coding\Game\petit_planet\petit_auto_pick\pick.png";
+        string samplePath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "petit_auto_pick", "pick.png"));
         if (!File.Exists(samplePath))
         {
             return;

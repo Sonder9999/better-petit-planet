@@ -61,7 +61,7 @@ public class InstrumentDetectorTest
     {
         using var detector = new InstrumentDetector();
 
-        string recorderPng = @"D:\Coding\Game\petit_planet\petit_music\music_recorder.png";
+        string recorderPng = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "petit_music", "music_recorder.png"));
         if (File.Exists(recorderPng))
         {
             using var mat = Cv2.ImRead(recorderPng, ImreadModes.Color);
@@ -70,7 +70,7 @@ public class InstrumentDetectorTest
             Assert.True(confidence >= 0.5, $"Expected confidence >= 0.5, got {confidence}");
         }
 
-        string closedPng = @"D:\Coding\Game\petit_planet\better-petit-planet\test_key_screen\test7_before.png";
+        string closedPng = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "test_key_screen", "test7_before.png"));
         if (File.Exists(closedPng))
         {
             using var mat = Cv2.ImRead(closedPng, ImreadModes.Color);
@@ -85,7 +85,7 @@ public class InstrumentDetectorTest
     {
         using var detector = new InstrumentDetector();
 
-        string recorderPng = @"D:\Coding\Game\petit_planet\petit_music\music_recorder.png";
+        string recorderPng = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "petit_music", "music_recorder.png"));
         if (File.Exists(recorderPng))
         {
             using var mat = Cv2.ImRead(recorderPng, ImreadModes.Color);
@@ -97,7 +97,7 @@ public class InstrumentDetectorTest
             Assert.Contains("已就绪", result.StatusSummary);
         }
 
-        string closedPng = @"D:\Coding\Game\petit_planet\better-petit-planet\test_key_screen\test7_before.png";
+        string closedPng = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "test_key_screen", "test7_before.png"));
         if (File.Exists(closedPng))
         {
             using var mat = Cv2.ImRead(closedPng, ImreadModes.Color);
@@ -154,7 +154,7 @@ public class InstrumentDetectorTest
         Assert.True(trigger.IsEnabled);
         Assert.Equal(25, trigger.Priority);
 
-        string recorderPng = @"D:\Coding\Game\petit_planet\petit_music\music_recorder.png";
+        string recorderPng = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "petit_music", "music_recorder.png"));
         if (File.Exists(recorderPng))
         {
             using var mat = Cv2.ImRead(recorderPng, ImreadModes.Color);

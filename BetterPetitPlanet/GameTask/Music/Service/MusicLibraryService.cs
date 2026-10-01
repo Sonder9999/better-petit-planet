@@ -141,10 +141,10 @@ public sealed class MusicLibraryService
             return currentCandidate;
         }
 
-        const string sourceFallback = @"D:\Coding\Game\petit_planet\petit_music\petit_music\data\songs";
-        if (Directory.Exists(sourceFallback))
+        var relativeFallback = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "petit_music", "petit_music", "data", "songs"));
+        if (Directory.Exists(relativeFallback))
         {
-            return sourceFallback;
+            return relativeFallback;
         }
 
         return null;

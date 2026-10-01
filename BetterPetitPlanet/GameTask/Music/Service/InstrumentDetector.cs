@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using BetterPetitPlanet.Core.Config;
@@ -85,9 +85,9 @@ public sealed class InstrumentDetector : IDisposable
                 Path.Combine(AppContext.BaseDirectory, "Assets", "Instruments", "Recorder", "targets"),
                 Path.Combine(AppContext.BaseDirectory, "Assets", "Instruments", "targets"),
                 Path.Combine(AppContext.BaseDirectory, "Assets", "Instruments"),
-                Path.Combine(@"D:\Coding\Game\petit_planet\better-petit-planet\better_petit_planet\BetterPetitPlanet\Assets\Instruments", instrumentName, "targets"),
-                Path.Combine(@"D:\Coding\Game\petit_planet\better-petit-planet\better_petit_planet\BetterPetitPlanet\Assets\Instruments", instrumentName),
-                @"D:\Coding\Game\petit_planet\better-petit-planet\better_petit_planet\test_crops",
+                Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "Assets", "Instruments", instrumentName, "targets")),
+                Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "Assets", "Instruments", instrumentName)),
+                Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "Assets", "Instruments", "Recorder", "targets")),
             };
 
             // 加载 21 个原生小块目标模板 (Numbers, Syllables, Keys)
@@ -130,8 +130,8 @@ public sealed class InstrumentDetector : IDisposable
                 Path.Combine(AppContext.BaseDirectory, "Assets", "Instruments", instrumentName, "template.png"),
                 Path.Combine(AppContext.BaseDirectory, "Assets", "Instruments", "Recorder", "template.png"),
                 Path.Combine(AppContext.BaseDirectory, "Assets", "Instruments", "recorder_template.png"),
-                Path.Combine(@"D:\Coding\Game\petit_planet\better-petit-planet\better_petit_planet\BetterPetitPlanet\Assets\Instruments", instrumentName, "template.png"),
-                @"D:\Coding\Game\petit_planet\petit_music\music_recorder.png"
+                Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "Assets", "Instruments", instrumentName, "template.png")),
+                Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "Assets", "Instruments", "Recorder", "template.png")),
             };
 
             foreach (var path in legacyCandidates)

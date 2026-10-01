@@ -1,7 +1,8 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using BetterPetitPlanet.Core.Config;
@@ -15,8 +16,18 @@ namespace BetterPetitPlanet.ViewModel.Pages;
 public partial class HomePageViewModel : ObservableObject
 {
     private readonly IConfigService _configService;
-    private readonly GameProcessDetector _processDetector;
-    private readonly GameTaskManager _taskManager;
+    private readonly GameProcessDetector? _processDetector;
+    private readonly GameTaskManager? _taskManager;
+    private readonly BetterPetitPlanet.Core.Web.OfficialCoverService? _coverService;
+
+    [ObservableProperty]
+    private string _officialBackgroundUrl = "https://planet.mihoyo.com/_nuxt/img/bg-1.6a2cfc2.jpg";
+
+    [ObservableProperty]
+    private string _officialForegroundUrl = "https://planet.mihoyo.com/_nuxt/img/character-foreground.0888a19.png";
+
+    [ObservableProperty]
+    private string _officialStarrySkyUrl = "https://planet.mihoyo.com/_nuxt/img/starry-sky@2x.c86a4f8.png";
 
     [ObservableProperty]
     private bool _isCapturing;
@@ -56,12 +67,14 @@ public partial class HomePageViewModel : ObservableObject
 
     public HomePageViewModel(
         IConfigService configService,
-        GameProcessDetector processDetector,
-        GameTaskManager taskManager)
+        GameProcessDetector? processDetector = null,
+        GameTaskManager? taskManager = null,
+        BetterPetitPlanet.Core.Web.OfficialCoverService? coverService = null)
     {
         _configService = configService;
         _processDetector = processDetector;
         _taskManager = taskManager;
+        _coverService = coverService;
 
         _autoStartGame = _configService.Config.General.AutoStartGame;
         _gameExecutablePath = _configService.Config.General.GameExecutablePath;
@@ -87,6 +100,34 @@ public partial class HomePageViewModel : ObservableObject
         {
             CheckGameStatus();
         }
+
+        // 异步查询官网最新主视觉资源（不下载落盘，直接通过远程连接流式更新）
+        _ = LoadLiveOfficialCoverAsync();
+    }
+
+    private async Task LoadLiveOfficialCoverAsync()
+    {
+        if (_coverService == null) return;
+        try
+        {
+            var visuals = await _coverService.FetchLatestCoverVisualsAsync();
+            if (!string.IsNullOrEmpty(visuals.BackgroundUrl))
+            {
+                OfficialBackgroundUrl = visuals.BackgroundUrl;
+            }
+            if (!string.IsNullOrEmpty(visuals.ForegroundUrl))
+            {
+                OfficialForegroundUrl = visuals.ForegroundUrl;
+            }
+            if (!string.IsNullOrEmpty(visuals.StarrySkyUrl))
+            {
+                OfficialStarrySkyUrl = visuals.StarrySkyUrl;
+            }
+        }
+        catch
+        {
+            // 网络异常时保持官方预设远端链接
+        }
     }
 
     private void OnCaptureStateChanged(bool running)
@@ -101,13 +142,15 @@ public partial class HomePageViewModel : ObservableObject
     [RelayCommand]
     private void ToggleCapture()
     {
+        if (_taskManager == null) return;
+
         if (_taskManager.IsRunning)
         {
             _taskManager.Stop();
         }
         else
         {
-            if (!_processDetector.IsGameRunning())
+            if (_processDetector != null && !_processDetector.IsGameRunning())
             {
                 if (AutoStartGame)
                 {
@@ -143,7 +186,7 @@ public partial class HomePageViewModel : ObservableObject
     [RelayCommand]
     private void CheckGameStatus()
     {
-        IsGameRunning = _processDetector.IsGameRunning();
+        IsGameRunning = _processDetector?.IsGameRunning() ?? false;
     }
 
     [RelayCommand]
@@ -190,7 +233,7 @@ public partial class HomePageViewModel : ObservableObject
     private void StartCaptureTest()
     {
         Log.Information("准备执行图像捕获测试");
-        var hwnd = _processDetector.FindMainWindowHandle();
+        var hwnd = _processDetector?.FindMainWindowHandle() ?? IntPtr.Zero;
         if (hwnd == IntPtr.Zero)
         {
             Log.Warning("执行图像捕获测试失败：未检测到游戏窗口");

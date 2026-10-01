@@ -9,59 +9,76 @@
       d:DataContext="{d:DesignInstance Type=viewModel:HomePageViewModel}"
       mc:Ignorable="d">
     <StackPanel Margin="42,16,42,12">
-        <!-- 顶部 Banner 卡片 -->
-            <Border Height="180"
-                    Margin="0,0,0,16"
-                    CornerRadius="8"
-                    ClipToBounds="True">
-                <Border.Background>
-                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                        <GradientStop Offset="0.0" Color="#1E293B" />
-                        <GradientStop Offset="0.5" Color="#0F172A" />
-                        <GradientStop Offset="1.0" Color="#1E1B4B" />
-                    </LinearGradientBrush>
-                </Border.Background>
-                <Grid>
-                    <!-- 装饰光晕 -->
-                    <Ellipse Width="300"
-                             Height="300"
-                             Margin="-60,-120,0,0"
-                             HorizontalAlignment="Right"
-                             VerticalAlignment="Top"
-                             Opacity="0.18">
-                        <Ellipse.Fill>
-                            <RadialGradientBrush>
-                                <GradientStop Offset="0" Color="{DynamicResource SystemAccentColorSecondary}" />
-                                <GradientStop Offset="1" Color="Transparent" />
-                            </RadialGradientBrush>
-                        </Ellipse.Fill>
-                    </Ellipse>
+        <!-- 顶部官方视觉 Banner 卡片 (纯远程链接流式加载，支持官网更新自适应与四角圆角裁切) -->
+        <Border x:Name="BannerCard"
+                Height="200"
+                Margin="0,0,0,16"
+                CornerRadius="8"
+                ClipToBounds="True"
+                Background="#0D1117"
+                SizeChanged="BannerCard_SizeChanged">
+            <Grid>
+                <!-- 1. 官网实时远景小镇插画 (纯远程 URL 流式加载) -->
+                <Image Source="{Binding OfficialBackgroundUrl}"
+                       Stretch="UniformToFill"
+                       HorizontalAlignment="Center"
+                       VerticalAlignment="Center"
+                       Opacity="0.85" />
 
-                    <StackPanel Margin="36,0,0,24"
-                                HorizontalAlignment="Left"
-                                VerticalAlignment="Bottom">
-                        <TextBlock FontSize="28"
-                                   FontWeight="Bold"
-                                   Foreground="{DynamicResource TextFillColorPrimaryBrush}"
-                                   Text="BetterPetitPlanet" />
-                        <TextBlock Margin="0,4,0,0"
-                                   FontSize="14"
-                                   Opacity="0.8"
-                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                                   Text="更好的星布谷地，免费且开源" />
-                        <TextBlock Margin="0,8,0,0"
-                                   FontSize="12"
-                                   Opacity="0.7">
-                            <Hyperlink Command="{Binding GoToWikiUrlCommand}"
-                                       Foreground="{DynamicResource TextFillColorPrimaryBrush}"
-                                       TextDecorations="None">
-                                <Run Text="点击查看文档与教程" />
-                                <Run Text=" ›" />
-                            </Hyperlink>
-                        </TextBlock>
-                    </StackPanel>
-                </Grid>
-            </Border>
+                <!-- 2. 官网实时星空背景层 -->
+                <Image Source="{Binding OfficialStarrySkyUrl}"
+                       Stretch="UniformToFill"
+                       HorizontalAlignment="Center"
+                       VerticalAlignment="Center"
+                       Opacity="0.65" />
+
+                <!-- 3. 官网实时右侧人物与弯月前景 (底部与卡片平齐，消除突出尖刺) -->
+                <Image Source="{Binding OfficialForegroundUrl}"
+                       Height="196"
+                       HorizontalAlignment="Right"
+                       VerticalAlignment="Bottom"
+                       Margin="0,0,20,0"
+                       Stretch="Uniform"
+                       RenderOptions.BitmapScalingMode="HighQuality" />
+
+                <!-- 4. 左侧优雅渐变蒙版，确保文字高对比度和清爽阅读 -->
+                <Border>
+                    <Border.Background>
+                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                            <GradientStop Offset="0.0" Color="#F20B0F19" />
+                            <GradientStop Offset="0.45" Color="#B80B0F19" />
+                            <GradientStop Offset="0.75" Color="#400B0F19" />
+                            <GradientStop Offset="1.0" Color="Transparent" />
+                        </LinearGradientBrush>
+                    </Border.Background>
+                </Border>
+
+                <!-- 5. 标题与说明文字 -->
+                <StackPanel Margin="36,0,0,24"
+                            HorizontalAlignment="Left"
+                            VerticalAlignment="Bottom">
+                    <TextBlock FontSize="28"
+                               FontWeight="Bold"
+                               Foreground="#FFFFFF"
+                               Text="BetterPetitPlanet" />
+                    <TextBlock Margin="0,4,0,0"
+                               FontSize="14"
+                               Opacity="0.9"
+                               Foreground="#E2E8F0"
+                               Text="更好的星布谷地，免费且开源" />
+                    <TextBlock Margin="0,8,0,0"
+                               FontSize="12"
+                               Opacity="0.85">
+                        <Hyperlink Command="{Binding GoToWikiUrlCommand}"
+                                   Foreground="#38BDF8"
+                                   TextDecorations="None">
+                            <Run Text="点击查看文档与教程" />
+                            <Run Text=" ›" />
+                        </Hyperlink>
+                    </TextBlock>
+                </StackPanel>
+            </Grid>
+        </Border>
 
             <!-- 截图器启动卡片 -->
             <ui:CardExpander Margin="0,0,0,12"
