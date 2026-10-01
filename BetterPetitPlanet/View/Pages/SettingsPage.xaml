@@ -1,0 +1,128 @@
+<Page x:Class="BetterPetitPlanet.View.Pages.SettingsPage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+      xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+      xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+      xmlns:viewModel="clr-namespace:BetterPetitPlanet.ViewModel.Pages"
+      Title="SettingsPage"
+      d:DataContext="{d:DesignInstance Type=viewModel:SettingsPageViewModel}"
+      mc:Ignorable="d">
+    <StackPanel Margin="{StaticResource PagePadding}">
+        <TextBlock Margin="0,0,0,4"
+                       FontSize="18"
+                       FontWeight="SemiBold"
+                       Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+                       Text="通用设置" />
+            <TextBlock Margin="0,0,0,16"
+                       FontSize="12"
+                       Foreground="{DynamicResource TextFillColorTertiaryBrush}"
+                       Text="配置星布谷地游戏环境、捕获通道及程序运行参数" />
+
+            <!-- 目标进程名称 -->
+            <ui:CardControl Margin="0,0,0,12"
+                            Icon="{ui:SymbolIcon AppGeneric24}">
+                <ui:CardControl.Header>
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <TextBlock Grid.Row="0"
+                                   FontSize="14"
+                                   FontWeight="Medium"
+                                   Text="目标游戏进程名称" />
+                        <TextBlock Grid.Row="1"
+                                   Margin="0,3,0,0"
+                                   FontSize="12"
+                                   Foreground="{DynamicResource TextFillColorTertiaryBrush}"
+                                   Text="监测与注入的目标进程文件名，默认为 PetitPlanet.exe" />
+                    </Grid>
+                </ui:CardControl.Header>
+                <ui:TextBox Width="200"
+                            Margin="0,0,12,0"
+                            Text="{Binding ProcessName, Mode=TwoWay}" />
+            </ui:CardControl>
+
+            <!-- 游戏主程序路径 -->
+            <ui:CardControl Margin="0,0,0,12"
+                            Icon="{ui:SymbolIcon Folder24}">
+                <ui:CardControl.Header>
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <TextBlock Grid.Row="0"
+                                   FontSize="14"
+                                   FontWeight="Medium"
+                                   Text="游戏客户端可执行程序路径" />
+                        <TextBlock Grid.Row="1"
+                                   Margin="0,3,0,0"
+                                   FontSize="12"
+                                   Foreground="{DynamicResource TextFillColorTertiaryBrush}"
+                                   Text="配置星布谷地游戏启动文件路径，用于自动拉起游戏" />
+                    </Grid>
+                </ui:CardControl.Header>
+                <StackPanel Margin="0,0,12,0" Orientation="Horizontal">
+                    <ui:TextBox Width="260"
+                                Margin="0,0,8,0"
+                                IsReadOnly="True"
+                                Text="{Binding GameExecutablePath}" />
+                    <ui:Button Command="{Binding BrowseGamePathCommand}" Content="浏览..." />
+                </StackPanel>
+            </ui:CardControl>
+
+            <!-- 截图捕获方式 -->
+            <ui:CardControl Margin="0,0,0,12"
+                            Icon="{ui:SymbolIcon Camera24}">
+                <ui:CardControl.Header>
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <TextBlock Grid.Row="0"
+                                   FontSize="14"
+                                   FontWeight="Medium"
+                                   Text="截图捕获方式" />
+                        <TextBlock Grid.Row="1"
+                                   Margin="0,3,0,0"
+                                   FontSize="12"
+                                   Foreground="{DynamicResource TextFillColorTertiaryBrush}"
+                                   Text="推荐选择 WindowsGraphicsCapture；带*的模式在当前游戏环境下不可用" />
+                    </Grid>
+                </ui:CardControl.Header>
+                <ComboBox Width="230"
+                          Margin="0,0,12,0"
+                          ItemsSource="{Binding AvailableCaptureModes}"
+                          SelectedItem="{Binding SelectedCaptureMode, Mode=TwoWay}" />
+            </ui:CardControl>
+
+            <!-- 日志目录 -->
+            <ui:CardControl Margin="0,0,0,12"
+                            Icon="{ui:SymbolIcon DocumentBulletList24}">
+                <ui:CardControl.Header>
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <TextBlock Grid.Row="0"
+                                   FontSize="14"
+                                   FontWeight="Medium"
+                                   Text="查看应用运行日志" />
+                        <TextBlock Grid.Row="1"
+                                   Margin="0,3,0,0"
+                                   FontSize="12"
+                                   Foreground="{DynamicResource TextFillColorTertiaryBrush}"
+                                   Text="打开存储滚动日志的本地目录（data/logs）" />
+                    </Grid>
+                </ui:CardControl.Header>
+                <ui:Button Margin="0,0,12,0"
+                           Command="{Binding OpenLogDirectoryCommand}"
+                           Content="打开日志文件夹"
+                           Icon="{ui:SymbolIcon FolderOpen24}" />
+            </ui:CardControl>
+        </StackPanel>
+    </Page>

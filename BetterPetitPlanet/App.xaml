@@ -1,0 +1,24 @@
+<Application x:Class="BetterPetitPlanet.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:converters="clr-namespace:BetterPetitPlanet.View.Converters"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml">
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ui:ThemesDictionary Theme="Dark" />
+                <ui:ControlsDictionary />
+            </ResourceDictionary.MergedDictionaries>
+
+            <!-- Design Tokens -->
+            <CornerRadius x:Key="ControlCornerRadius">6</CornerRadius>
+            <Thickness x:Key="PagePadding">42,16,42,24</Thickness>
+
+            <!-- Converters -->
+            <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
+            <converters:BooleanToVisibilityRevertConverter x:Key="BooleanToVisibilityRevertConverter" />
+            <converters:InverseBooleanConverter x:Key="InverseBooleanConverter" />
+            <converters:MillisecondsToTimeConverter x:Key="MillisecondsToTimeConverter" />
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>

@@ -1,0 +1,179 @@
+<Page x:Class="BetterPetitPlanet.View.Pages.TriggerSettingsPage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+      xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+      xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+      xmlns:viewModel="clr-namespace:BetterPetitPlanet.ViewModel.Pages"
+      Title="TriggerSettingsPage"
+      d:DataContext="{d:DesignInstance Type=viewModel:TriggerSettingsPageViewModel}"
+      mc:Ignorable="d">
+
+    <Page.Resources />
+
+    <StackPanel Margin="{StaticResource PagePadding}">
+        <TextBlock Margin="0,0,0,14"
+                       FontSize="18"
+                       FontWeight="SemiBold"
+                       Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+                       Text="实时触发的自动化任务设置" />
+
+            <!-- 自动拾取主卡片 -->
+            <ui:CardExpander Margin="0,0,0,12"
+                             ContentPadding="0"
+                             Icon="{ui:SymbolIcon HandWave24}"
+                             IsExpanded="True">
+                <ui:CardExpander.Header>
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Row="0"
+                                   Grid.Column="0"
+                                   FontSize="14"
+                                   FontWeight="Medium"
+                                   Text="自动拾取" />
+                        <TextBlock Grid.Row="1"
+                                   Grid.Column="0"
+                                   Margin="0,3,0,0"
+                                   FontSize="12"
+                                   Foreground="{DynamicResource TextFillColorTertiaryBrush}"
+                                   Text="识别星布谷地游戏画面中的“拾取”提示，自动按下拾取键" />
+                        <ui:ToggleSwitch Grid.Row="0"
+                                         Grid.RowSpan="2"
+                                         Grid.Column="1"
+                                         Margin="0,0,12,0"
+                                         IsChecked="{Binding AutoPickEnabled, Mode=TwoWay}" />
+                    </Grid>
+                </ui:CardExpander.Header>
+
+                <StackPanel>
+                    <!-- 文字识别引擎选择 -->
+                    <Grid Margin="16">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Row="0"
+                                   Grid.Column="0"
+                                   FontWeight="Medium"
+                                   Text="选择自动拾取文字识别引擎" />
+                        <TextBlock Grid.Row="1"
+                                   Grid.Column="0"
+                                   Margin="0,3,0,0"
+                                   FontSize="12"
+                                   Foreground="{DynamicResource TextFillColorTertiaryBrush}"
+                                   Text="DirectML 支持硬件 GPU 加速，推荐使用；带*的引擎在当前环境下不可用" />
+                        <ComboBox Grid.Row="0"
+                                  Grid.RowSpan="2"
+                                  Grid.Column="1"
+                                  Width="130"
+                                  Margin="0,0,8,0"
+                                  ItemsSource="{Binding AvailableOcrEngines}"
+                                  SelectedItem="{Binding SelectedOcrEngine, Mode=TwoWay}" />
+                    </Grid>
+
+                    <Separator Margin="-18,0" BorderThickness="0,1,0,0" />
+
+                    <!-- 拾取冷却与间隔 -->
+                    <Grid Margin="16">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Row="0"
+                                   Grid.Column="0"
+                                   FontWeight="Medium"
+                                   Text="拾取冷却间隔 (毫秒)" />
+                        <TextBlock Grid.Row="1"
+                                   Grid.Column="0"
+                                   Margin="0,3,0,0"
+                                   FontSize="12"
+                                   Foreground="{DynamicResource TextFillColorTertiaryBrush}"
+                                   Text="两次自动拾取触发之间的最小时间间隔，推荐 30~80 毫秒" />
+                        <ui:TextBox Grid.Row="0"
+                                    Grid.RowSpan="2"
+                                    Grid.Column="1"
+                                    Width="100"
+                                    Margin="0,0,8,0"
+                                    Text="{Binding CooldownMs, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                    </Grid>
+
+                    <Separator Margin="-18,0" BorderThickness="0,1,0,0" />
+
+                    <!-- 按键按下持续时长 -->
+                    <Grid Margin="16">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Row="0"
+                                   Grid.Column="0"
+                                   FontWeight="Medium"
+                                   Text="按键按下持续时长 (毫秒)" />
+                        <TextBlock Grid.Row="1"
+                                   Grid.Column="0"
+                                   Margin="0,3,0,0"
+                                   FontSize="12"
+                                   Foreground="{DynamicResource TextFillColorTertiaryBrush}"
+                                   Text="模拟硬件按键按下到松开的保持时长，推荐 30~50 毫秒" />
+                        <ui:TextBox Grid.Row="0"
+                                    Grid.RowSpan="2"
+                                    Grid.Column="1"
+                                    Width="100"
+                                    Margin="0,0,8,0"
+                                    Text="{Binding PressDurationMs, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                    </Grid>
+
+                    <Separator Margin="-18,0" BorderThickness="0,1,0,0" />
+
+                    <!-- 自定义拾取按键 -->
+                    <Grid Margin="16">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Row="0"
+                                   Grid.Column="0"
+                                   FontWeight="Medium"
+                                   Text="自定义拾取按键" />
+                        <TextBlock Grid.Row="1"
+                                   Grid.Column="0"
+                                   Margin="0,3,0,0"
+                                   FontSize="12"
+                                   Foreground="{DynamicResource TextFillColorTertiaryBrush}"
+                                   Text="默认为 F，自带了 E 和 G 按键，需要改成其他键的请阅读文档" />
+                        <ComboBox Grid.Row="0"
+                                  Grid.RowSpan="2"
+                                  Grid.Column="1"
+                                  Width="88"
+                                  Margin="0,0,8,0"
+                                  ItemsSource="{Binding AvailablePickKeys}"
+                                  SelectedItem="{Binding SelectedPickKey, Mode=TwoWay}" />
+                    </Grid>
+                </StackPanel>
+            </ui:CardExpander>
+
+    </StackPanel>
+</Page>

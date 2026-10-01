@@ -1,0 +1,135 @@
+<ui:FluentWindow x:Class="BetterPetitPlanet.View.CaptureTestWindow"
+                  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                  xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+                  xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+                  xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+                  Title="星布谷地 - 图像捕获测试"
+                  Width="960"
+                  Height="600"
+                  MinWidth="640"
+                  MinHeight="400"
+                  ExtendsContentIntoTitleBar="True"
+                  Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+                  WindowBackdropType="Mica"
+                  WindowStartupLocation="CenterScreen"
+                  mc:Ignorable="d">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <ui:TitleBar Grid.Row="0" Title="星布谷地 - 图像捕获测试">
+            <ui:TitleBar.Icon>
+                <ui:SymbolIcon Symbol="Camera24" />
+            </ui:TitleBar.Icon>
+        </ui:TitleBar>
+
+        <!-- 图像主显示区 -->
+        <Grid Grid.Row="1" Background="#111114" ClipToBounds="True">
+            <Viewbox Stretch="Uniform">
+                <Grid>
+                    <Image x:Name="DisplayCaptureResultImage"
+                           Width="Auto"
+                           Height="Auto"
+                           RenderOptions.BitmapScalingMode="HighQuality" />
+
+                    <!-- ROI 视觉辅助叠加层 -->
+                    <Canvas x:Name="RoiOverlayCanvas"
+                            Width="{Binding ActualWidth, ElementName=DisplayCaptureResultImage}"
+                            Height="{Binding ActualHeight, ElementName=DisplayCaptureResultImage}"
+                            IsHitTestVisible="False">
+                        <!-- 自动拾取检测区域 (ROI) -->
+                        <Border x:Name="RoiBorder"
+                                BorderBrush="#FF00E5FF"
+                                BorderThickness="2"
+                                CornerRadius="4"
+                                Background="#2200E5FF">
+                            <TextBlock Margin="4,2"
+                                       FontSize="11"
+                                       FontWeight="Bold"
+                                       Foreground="#FF00E5FF"
+                                       Text="自动拾取检测区域 (ROI)" />
+                        </Border>
+
+                        <!-- 7 个独立音符按键小方块 (根据标注数据独立检测) -->
+                        <Border x:Name="BtnRoi0" BorderBrush="#FFFFB900" BorderThickness="1.5" CornerRadius="3" Background="#15FFB900">
+                            <TextBlock Margin="2,1" FontSize="10" FontWeight="Bold" Foreground="#FFFFB900" Text="1 do A" HorizontalAlignment="Center"/>
+                        </Border>
+                        <Border x:Name="BtnRoi1" BorderBrush="#FFFFB900" BorderThickness="1.5" CornerRadius="3" Background="#15FFB900">
+                            <TextBlock Margin="2,1" FontSize="10" FontWeight="Bold" Foreground="#FFFFB900" Text="2 re S" HorizontalAlignment="Center"/>
+                        </Border>
+                        <Border x:Name="BtnRoi2" BorderBrush="#FFFFB900" BorderThickness="1.5" CornerRadius="3" Background="#15FFB900">
+                            <TextBlock Margin="2,1" FontSize="10" FontWeight="Bold" Foreground="#FFFFB900" Text="3 mi D" HorizontalAlignment="Center"/>
+                        </Border>
+                        <Border x:Name="BtnRoi3" BorderBrush="#FFFFB900" BorderThickness="1.5" CornerRadius="3" Background="#15FFB900">
+                            <TextBlock Margin="2,1" FontSize="10" FontWeight="Bold" Foreground="#FFFFB900" Text="4 fa F" HorizontalAlignment="Center"/>
+                        </Border>
+                        <Border x:Name="BtnRoi4" BorderBrush="#FFFFB900" BorderThickness="1.5" CornerRadius="3" Background="#15FFB900">
+                            <TextBlock Margin="2,1" FontSize="10" FontWeight="Bold" Foreground="#FFFFB900" Text="5 so J" HorizontalAlignment="Center"/>
+                        </Border>
+                        <Border x:Name="BtnRoi5" BorderBrush="#FFFFB900" BorderThickness="1.5" CornerRadius="3" Background="#15FFB900">
+                            <TextBlock Margin="2,1" FontSize="10" FontWeight="Bold" Foreground="#FFFFB900" Text="6 la K" HorizontalAlignment="Center"/>
+                        </Border>
+                        <Border x:Name="BtnRoi6" BorderBrush="#FFFFB900" BorderThickness="1.5" CornerRadius="3" Background="#15FFB900">
+                            <TextBlock Margin="2,1" FontSize="10" FontWeight="Bold" Foreground="#FFFFB900" Text="7 ti L" HorizontalAlignment="Center"/>
+                        </Border>
+                    </Canvas>
+                </Grid>
+            </Viewbox>
+        </Grid>
+
+        <!-- 底部实时状态条 -->
+        <Border Grid.Row="2"
+                Padding="16,8"
+                Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                BorderThickness="0,1,0,0">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <StackPanel VerticalAlignment="Center" Orientation="Horizontal">
+                    <ui:SymbolIcon Margin="0,0,6,0" Symbol="Info24" />
+                    <TextBlock x:Name="TxtResolution"
+                               Margin="0,0,12,0"
+                               VerticalAlignment="Center"
+                               FontSize="12"
+                               Text="分辨率: -- x --" />
+                    <TextBlock x:Name="TxtCaptureTime"
+                               Margin="0,0,12,0"
+                               VerticalAlignment="Center"
+                               FontSize="12"
+                               Text="耗时: -- ms" />
+                    <TextBlock x:Name="TxtFps"
+                               Margin="0,0,12,0"
+                               VerticalAlignment="Center"
+                               FontSize="12"
+                               Text="帧率: -- FPS" />
+                    <TextBlock x:Name="TxtMode"
+                               Margin="0,0,12,0"
+                               VerticalAlignment="Center"
+                               FontSize="12"
+                               Text="模式: --" />
+                    <Border Background="#1A888888" CornerRadius="4" Padding="8,2" VerticalAlignment="Center">
+                        <TextBlock x:Name="TxtInstrument"
+                                   FontSize="12"
+                                   FontWeight="SemiBold"
+                                   Foreground="#888888"
+                                   Text="竖笛: 检测中..." />
+                    </Border>
+                </StackPanel>
+
+                <TextBlock Grid.Column="1"
+                           VerticalAlignment="Center"
+                           FontSize="11"
+                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                           Text="实时捕获中 · 关闭窗口即可停止测试" />
+            </Grid>
+        </Border>
+    </Grid>
+</ui:FluentWindow>
