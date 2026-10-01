@@ -12,5 +12,6 @@ public partial class TriggerSettingsPage : Page
         ViewModel = viewModel;
         DataContext = ViewModel;
         InitializeComponent();
+        Loaded += (s, e) => ViewModel.SyncWithTrigger();
     }
 }

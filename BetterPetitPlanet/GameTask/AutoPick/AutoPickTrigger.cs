@@ -21,8 +21,22 @@ public sealed class AutoPickTrigger : ITaskTrigger
     private int _pickCount;
 
     public string Name => "自动拾取";
-    public bool IsEnabled { get; set; }
+    private bool _isEnabled;
+    public bool IsEnabled
+    {
+        get => _isEnabled;
+        set
+        {
+            if (_isEnabled != value)
+            {
+                _isEnabled = value;
+                StateChanged?.Invoke(_isEnabled);
+            }
+        }
+    }
     public int Priority => 30;
+
+    public event Action<bool>? StateChanged;
 
     public AutoPickTrigger(
         IConfigService configService,
@@ -35,7 +49,7 @@ public sealed class AutoPickTrigger : ITaskTrigger
         _ocrEngine = ocrEngine;
         _logger = logger;
 
-        IsEnabled = _configService.Config.AutoPick.Enabled;
+        _isEnabled = _configService.Config.AutoPick.Enabled;
     }
 
     public void OnCapture(CaptureContent content)

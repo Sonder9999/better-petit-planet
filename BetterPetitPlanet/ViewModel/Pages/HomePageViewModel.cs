@@ -132,11 +132,23 @@ public partial class HomePageViewModel : ObservableObject
 
     private void OnCaptureStateChanged(bool running)
     {
-        IsCapturing = running;
-        CaptureButtonText = running ? "停止" : "启动";
-        CaptureStatusDescription = running
-            ? "截图器正在运行中，实时监控游戏画面..."
-            : "截图器启动后才能使用各项功能，点击展开启动相关配置。";
+        void Update()
+        {
+            IsCapturing = running;
+            CaptureButtonText = running ? "停止" : "启动";
+            CaptureStatusDescription = running
+                ? "截图器正在运行中，实时监控游戏画面..."
+                : "截图器启动后才能使用各项功能，点击展开启动相关配置。";
+        }
+
+        if (System.Windows.Application.Current?.Dispatcher != null && !System.Windows.Application.Current.Dispatcher.CheckAccess())
+        {
+            System.Windows.Application.Current.Dispatcher.Invoke(Update);
+        }
+        else
+        {
+            Update();
+        }
     }
 
     [RelayCommand]

@@ -129,6 +129,9 @@ public partial class App : Application
         var instrumentTrigger = _host.Services.GetRequiredService<InstrumentDetectorTrigger>();
         dispatcher.RegisterTrigger(instrumentTrigger);
 
+        // Pre-resolve ViewModels that listen to background trigger/hotkey events
+        _host.Services.GetRequiredService<TriggerSettingsPageViewModel>();
+
         // Initialize Global Hotkeys
         var hotkeyService = _host.Services.GetRequiredService<HotkeyService>();
         hotkeyService.Initialize();
@@ -169,6 +172,7 @@ public partial class App : Application
         {
             Log.CloseAndFlush();
             base.OnExit(e);
+            Environment.Exit(0);
         }
     }
 

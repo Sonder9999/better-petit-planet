@@ -252,5 +252,6 @@ public partial class MainWindow : FluentWindow, INavigationWindow
         CompositionTarget.Rendering -= OnCompositionTargetRendering;
         RemoveHandler(PreviewMouseWheelEvent, new MouseWheelEventHandler(OnGlobalPreviewMouseWheel));
         base.OnClosed(e);
+        Application.Current?.Shutdown();
     }
 }

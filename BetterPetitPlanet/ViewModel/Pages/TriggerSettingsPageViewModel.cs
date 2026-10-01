@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -8,11 +9,12 @@ using Serilog;
 
 namespace BetterPetitPlanet.ViewModel.Pages;
 
-public partial class TriggerSettingsPageViewModel : ObservableObject
+public partial class TriggerSettingsPageViewModel : ObservableObject, IDisposable
 {
     private readonly IConfigService _configService;
-    private readonly AutoPickTrigger _autoPickTrigger;
-    private readonly GameTaskManager _taskManager;
+    private readonly AutoPickTrigger? _autoPickTrigger;
+    private readonly GameTaskManager? _taskManager;
+    private bool _isSyncingFromTrigger;
 
     [ObservableProperty]
     private bool _autoPickEnabled;
@@ -34,13 +36,62 @@ public partial class TriggerSettingsPageViewModel : ObservableObject
 
     public TriggerSettingsPageViewModel(
         IConfigService configService,
-        AutoPickTrigger autoPickTrigger,
-        GameTaskManager taskManager)
+        AutoPickTrigger? autoPickTrigger = null,
+        GameTaskManager? taskManager = null)
     {
         _configService = configService;
         _autoPickTrigger = autoPickTrigger;
         _taskManager = taskManager;
         LoadFromConfig();
+
+        if (_autoPickTrigger != null)
+        {
+            _autoPickTrigger.StateChanged += OnAutoPickTriggerStateChanged;
+        }
+    }
+
+    public void SyncWithTrigger()
+    {
+        if (_autoPickTrigger != null && AutoPickEnabled != _autoPickTrigger.IsEnabled)
+        {
+            _isSyncingFromTrigger = true;
+            try
+            {
+                AutoPickEnabled = _autoPickTrigger.IsEnabled;
+            }
+            finally
+            {
+                _isSyncingFromTrigger = false;
+            }
+        }
+    }
+
+    private void OnAutoPickTriggerStateChanged(bool enabled)
+    {
+        void Update()
+        {
+            if (AutoPickEnabled != enabled)
+            {
+                _isSyncingFromTrigger = true;
+                try
+                {
+                    AutoPickEnabled = enabled;
+                }
+                finally
+                {
+                    _isSyncingFromTrigger = false;
+                }
+            }
+        }
+
+        if (System.Windows.Application.Current?.Dispatcher != null && !System.Windows.Application.Current.Dispatcher.CheckAccess())
+        {
+            System.Windows.Application.Current.Dispatcher.Invoke(Update);
+        }
+        else
+        {
+            Update();
+        }
     }
 
     private void LoadFromConfig()
@@ -87,6 +138,11 @@ public partial class TriggerSettingsPageViewModel : ObservableObject
 
     partial void OnAutoPickEnabledChanged(bool value)
     {
+        if (_isSyncingFromTrigger)
+        {
+            return;
+        }
+
         SaveToConfig();
         if (value && _taskManager != null && !_taskManager.IsRunning)
         {
@@ -97,4 +153,12 @@ public partial class TriggerSettingsPageViewModel : ObservableObject
     partial void OnSelectedPickKeyChanged(string value) => SaveToConfig();
     partial void OnPressDurationMsChanged(int value) => SaveToConfig();
     partial void OnCooldownMsChanged(int value) => SaveToConfig();
+
+    public void Dispose()
+    {
+        if (_autoPickTrigger != null)
+        {
+            _autoPickTrigger.StateChanged -= OnAutoPickTriggerStateChanged;
+        }
+    }
 }
