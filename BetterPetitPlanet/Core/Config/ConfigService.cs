@@ -56,6 +56,25 @@ public sealed class ConfigService : IConfigService
                 var config = JsonConvert.DeserializeObject<AppConfig>(json);
                 if (config != null)
                 {
+                    config.AutoPick ??= new AutoPickConfig();
+                    if (config.AutoPick.Whitelist == null || config.AutoPick.Whitelist.Count == 0)
+                    {
+                        config.AutoPick.Whitelist = ["拾取"];
+                    }
+                    else
+                    {
+                        config.AutoPick.Whitelist = System.Linq.Enumerable.ToList(System.Linq.Enumerable.Distinct(System.Linq.Enumerable.Where(config.AutoPick.Whitelist, w => !string.IsNullOrWhiteSpace(w))));
+                    }
+
+                    if (config.AutoPick.Blacklist == null || config.AutoPick.Blacklist.Count == 0)
+                    {
+                        config.AutoPick.Blacklist = ["拾取雪球"];
+                    }
+                    else
+                    {
+                        config.AutoPick.Blacklist = System.Linq.Enumerable.ToList(System.Linq.Enumerable.Distinct(System.Linq.Enumerable.Where(config.AutoPick.Blacklist, b => !string.IsNullOrWhiteSpace(b))));
+                    }
+
                     return config;
                 }
             }

@@ -94,10 +94,29 @@ public sealed class AutoPickTrigger : ITaskTrigger
 
             var config = _configService.Config.AutoPick;
 
-            // Check if keyword is matched (based on pick.xml target "拾取")
-            bool matched = config.Keywords.Any(k => recognizedText.Contains(k, StringComparison.OrdinalIgnoreCase))
-                           || recognizedText.Contains("拾取", StringComparison.OrdinalIgnoreCase)
-                           || (recognizedText.Contains("拾") && recognizedText.Contains("取"));
+            // 1. 黑名单初筛 (Blacklist check: 命中即忽略不触发)
+            var blacklist = (config.Blacklist != null && config.Blacklist.Count > 0)
+                ? config.Blacklist
+                : ["拾取雪球"];
+
+            if (blacklist.Any(b =>
+                !string.IsNullOrWhiteSpace(b) &&
+                recognizedText.Contains(b.Trim(), StringComparison.OrdinalIgnoreCase)))
+            {
+                _logger?.LogDebug("AutoPick OCR candidate '{Text}' hit blacklist, ignored.", recognizedText);
+                return;
+            }
+
+            // 2. 白名单匹配 (Whitelist check: 未被黑名单拦截且命中白名单)
+            var whitelist = (config.Whitelist != null && config.Whitelist.Count > 0)
+                ? config.Whitelist
+                : (config.Keywords != null && config.Keywords.Count > 0 ? config.Keywords : ["拾取"]);
+
+            bool matched = whitelist.Any(w =>
+                !string.IsNullOrWhiteSpace(w) &&
+                recognizedText.Contains(w.Trim(), StringComparison.OrdinalIgnoreCase))
+                || (recognizedText.Contains("拾") && recognizedText.Contains("取") && whitelist.Contains("拾取"));
+
             if (!matched)
             {
                 _logger?.LogDebug("AutoPick OCR candidate '{Text}' did not match pickup keywords", recognizedText);

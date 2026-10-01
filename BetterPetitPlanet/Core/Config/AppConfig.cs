@@ -27,7 +27,15 @@ public sealed class AutoPickConfig
     public int PressDurationMs { get; set; } = 40;
     public int CooldownMs { get; set; } = 50;
     public double MinConfidence { get; set; } = 0.50;
-    public List<string> Keywords { get; set; } = ["拾取"];
+    public List<string> Whitelist { get; set; } = ["拾取"];
+    public List<string> Blacklist { get; set; } = ["拾取雪球"];
+
+    [Newtonsoft.Json.JsonIgnore]
+    public List<string> Keywords
+    {
+        get => Whitelist;
+        set => Whitelist = value;
+    }
 }
 
 public enum MusicInputMode

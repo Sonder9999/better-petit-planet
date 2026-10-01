@@ -172,6 +172,152 @@
                                   ItemsSource="{Binding AvailablePickKeys}"
                                   SelectedItem="{Binding SelectedPickKey, Mode=TwoWay}" />
                     </Grid>
+
+                    <Separator Margin="-18,0" BorderThickness="0,1,0,0" />
+
+                    <!-- OCR 识别白名单 (触发词) -->
+                    <Grid Margin="16">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Row="0"
+                                   Grid.Column="0"
+                                   FontWeight="Medium"
+                                   Text="OCR 识别白名单 (触发词)" />
+                        <TextBlock Grid.Row="1"
+                                   Grid.Column="0"
+                                   Margin="0,3,0,0"
+                                   FontSize="12"
+                                   Foreground="{DynamicResource TextFillColorTertiaryBrush}"
+                                   Text="画面识别到的文本包含白名单关键词时触发拾取，默认为：拾取" />
+                        <StackPanel Grid.Row="0"
+                                    Grid.RowSpan="2"
+                                    Grid.Column="1"
+                                    Margin="0,0,8,0"
+                                    Orientation="Horizontal"
+                                    VerticalAlignment="Center">
+                            <ui:TextBox Width="140"
+                                        PlaceholderText="添加白名单关键词..."
+                                        Text="{Binding NewWhitelistKeyword, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                            <ui:Button Margin="8,0,0,0"
+                                       Content="添加"
+                                       Command="{Binding AddWhitelistKeywordCommand}" />
+                        </StackPanel>
+                        <ItemsControl Grid.Row="2"
+                                      Grid.Column="0"
+                                      Grid.ColumnSpan="2"
+                                      Margin="0,12,0,0"
+                                      ItemsSource="{Binding WhitelistKeywords}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel Orientation="Horizontal" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Margin="0,0,8,8"
+                                            Background="{DynamicResource ControlFillColorDefaultBrush}"
+                                            BorderBrush="{DynamicResource ControlElevationBorderBrush}"
+                                            BorderThickness="1"
+                                            CornerRadius="4"
+                                            Padding="8,3,4,3">
+                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                            <TextBlock VerticalAlignment="Center"
+                                                       FontSize="12"
+                                                       Text="{Binding}" />
+                                            <ui:Button Margin="6,0,0,0"
+                                                       Padding="2"
+                                                       Appearance="Transparent"
+                                                       BorderThickness="0"
+                                                       Command="{Binding DataContext.RemoveWhitelistKeywordCommand, RelativeSource={RelativeSource AncestorType=Page}}"
+                                                       CommandParameter="{Binding}">
+                                                <ui:SymbolIcon Symbol="Dismiss16" FontSize="11" />
+                                            </ui:Button>
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </Grid>
+
+                    <Separator Margin="-18,0" BorderThickness="0,1,0,0" />
+
+                    <!-- OCR 识别黑名单 (忽略词) -->
+                    <Grid Margin="16">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Row="0"
+                                   Grid.Column="0"
+                                   FontWeight="Medium"
+                                   Text="OCR 识别黑名单 (忽略词)" />
+                        <TextBlock Grid.Row="1"
+                                   Grid.Column="0"
+                                   Margin="0,3,0,0"
+                                   FontSize="12"
+                                   Foreground="{DynamicResource TextFillColorTertiaryBrush}"
+                                   Text="画面识别到的文本包含黑名单关键词时将直接忽略不拾取，默认为：拾取雪球" />
+                        <StackPanel Grid.Row="0"
+                                    Grid.RowSpan="2"
+                                    Grid.Column="1"
+                                    Margin="0,0,8,0"
+                                    Orientation="Horizontal"
+                                    VerticalAlignment="Center">
+                            <ui:TextBox Width="140"
+                                        PlaceholderText="添加黑名单关键词..."
+                                        Text="{Binding NewBlacklistKeyword, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                            <ui:Button Margin="8,0,0,0"
+                                       Content="添加"
+                                       Command="{Binding AddBlacklistKeywordCommand}" />
+                        </StackPanel>
+                        <ItemsControl Grid.Row="2"
+                                      Grid.Column="0"
+                                      Grid.ColumnSpan="2"
+                                      Margin="0,12,0,0"
+                                      ItemsSource="{Binding BlacklistKeywords}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel Orientation="Horizontal" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Margin="0,0,8,8"
+                                            Background="{DynamicResource ControlFillColorDefaultBrush}"
+                                            BorderBrush="{DynamicResource ControlElevationBorderBrush}"
+                                            BorderThickness="1"
+                                            CornerRadius="4"
+                                            Padding="8,3,4,3">
+                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                            <TextBlock VerticalAlignment="Center"
+                                                       FontSize="12"
+                                                       Text="{Binding}" />
+                                            <ui:Button Margin="6,0,0,0"
+                                                       Padding="2"
+                                                       Appearance="Transparent"
+                                                       BorderThickness="0"
+                                                       Command="{Binding DataContext.RemoveBlacklistKeywordCommand, RelativeSource={RelativeSource AncestorType=Page}}"
+                                                       CommandParameter="{Binding}">
+                                                <ui:SymbolIcon Symbol="Dismiss16" FontSize="11" />
+                                            </ui:Button>
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </Grid>
                 </StackPanel>
             </ui:CardExpander>
 
