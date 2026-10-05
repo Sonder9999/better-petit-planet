@@ -102,3 +102,10 @@
 
 - **[BetterGI (Better Genshin Impact)](https://github.com/babalae/better-genshin-impact)**：本项目的 UI 布局设计、图像捕获框架以及触发器机制大量参考了 BetterGI 的开源代码，特此致谢。
 - **[@指尖灬旋律丿](https://space.bilibili.com/76052941)**：感谢大佬在 B 站公开分享的风物之诗琴谱，本项目的测试曲谱基于其琴谱改编映射。
+
+---
+
+## 开源协议
+
+本项目基于 [GPL-3.0 License](LICENSE) 开源协议发布。
+
