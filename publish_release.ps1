@@ -43,11 +43,22 @@ if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
 }
 
-# 2. Copy songs library
-if (Test-Path $SongsSource) {
-    Write-Host "Copying songs library..." -ForegroundColor Yellow
-    New-Item -ItemType Directory -Path (Join-Path $ReleaseDir "data") -Force | Out-Null
-    Copy-Item -Path $SongsSource -Destination $SongsDest -Recurse -Force
+# 2. Copy selected songs (only one_last_kiss.json and dao_xiang.json for release)
+$RecorderSongsDest = Join-Path $ReleaseDir "data\songs\recorder"
+if (Test-Path $SongsDest) {
+    Remove-Item -Path $SongsDest -Recurse -Force -ErrorAction SilentlyContinue
+}
+New-Item -ItemType Directory -Path $RecorderSongsDest -Force | Out-Null
+
+$ReleaseSongs = @("one_last_kiss.json", "dao_xiang.json")
+foreach ($songFile in $ReleaseSongs) {
+    $srcSongPath = Join-Path $SongsSource "recorder\$songFile"
+    if (Test-Path $srcSongPath) {
+        Write-Host "Copying release song: $songFile" -ForegroundColor Yellow
+        Copy-Item -Path $srcSongPath -Destination (Join-Path $RecorderSongsDest $songFile) -Force
+    } else {
+        Write-Host "Warning: Release song not found at $srcSongPath" -ForegroundColor DarkYellow
+    }
 }
 
 # 3. Copy OCR models

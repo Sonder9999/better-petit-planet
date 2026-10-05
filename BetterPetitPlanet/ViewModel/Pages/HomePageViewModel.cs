@@ -279,7 +279,7 @@ public partial class HomePageViewModel : ObservableObject
         {
             Process.Start(new ProcessStartInfo
             {
-                FileName = "https://github.com",
+                FileName = "https://github.com/Sonder9999/better-petit-planet",
                 UseShellExecute = true
             });
         }
