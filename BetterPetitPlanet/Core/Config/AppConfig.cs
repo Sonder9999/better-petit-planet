@@ -65,6 +65,7 @@ public sealed class MusicConfig
     /// </summary>
     public bool RestoreMouseAfterClick { get; set; } = false;
     public bool AutoPauseOnFocusLost { get; set; } = false;
+    public bool AutoFocusGameOnPlayback { get; set; } = true;
     public MusicPlaybackMode PlaybackMode { get; set; } = MusicPlaybackMode.PlayOnce;
 }
 

@@ -123,6 +123,11 @@
                                 <Setter TargetName="ThumbSurface" Property="Width" Value="16" />
                                 <Setter TargetName="ThumbSurface" Property="Height" Value="16" />
                             </Trigger>
+                            <DataTrigger Binding="{Binding IsMouseCaptured, RelativeSource={RelativeSource AncestorType=Slider}}" Value="True">
+                                <Setter TargetName="Halo" Property="Opacity" Value="0.36" />
+                                <Setter TargetName="ThumbSurface" Property="Width" Value="16" />
+                                <Setter TargetName="ThumbSurface" Property="Height" Value="16" />
+                            </DataTrigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
@@ -409,6 +414,7 @@
         <Border Grid.Row="1"
                 MinHeight="96"
                 Padding="0"
+                Panel.ZIndex="10"
                 BorderThickness="0,1,0,0"
                 CornerRadius="0"
                 Style="{StaticResource MusicCardStyle}">
@@ -421,14 +427,19 @@
                 <!-- 顶部无缝吸附进度滑块 -->
                 <Slider Height="26"
                         Margin="0,-13,0,0"
-                        Panel.ZIndex="2"
+                        Panel.ZIndex="10"
                         VerticalAlignment="Top"
-                        Maximum="{Binding TotalDuration}"
+                        Background="Transparent"
+                        IsMoveToPointEnabled="True"
+                        Maximum="{Binding MaximumNoteIndex}"
                         Minimum="0"
+                        SmallChange="1"
                         Style="{StaticResource PlaybackSliderStyle}"
-                        Value="{Binding CurrentPosition, Mode=TwoWay}">
+                        ToolTip="{Binding CurrentTimeText, StringFormat='播放进度：{0}'}"
+                        Value="{Binding CurrentNoteIndex, Mode=TwoWay}">
                     <b:Interaction.Behaviors>
                         <behavior:SliderSeekBehavior BeginCommand="{Binding BeginSeekCommand}"
+                                                     ScrubbingCommand="{Binding ScrubbingCommand}"
                                                      Command="{Binding SeekCommand}" />
                     </b:Interaction.Behaviors>
                 </Slider>

@@ -49,6 +49,15 @@ public sealed class PetitScoreParser
                 .Where(e => !string.IsNullOrEmpty(e.Key))
                 .ToList();
 
+            if (events.Count > 0 && events[0].TimeMs > 0)
+            {
+                int leadIn = events[0].TimeMs;
+                foreach (var ev in events)
+                {
+                    ev.TimeMs -= leadIn;
+                }
+            }
+
             int totalDuration = events.Count > 0
                 ? events.Max(e => e.TimeMs + e.DurationMs)
                 : 0;

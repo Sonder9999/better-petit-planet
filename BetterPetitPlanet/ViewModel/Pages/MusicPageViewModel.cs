@@ -73,6 +73,16 @@ public partial class MusicPageViewModel : ObservableObject
     private double _totalDuration = 100.0;
 
     [ObservableProperty]
+    private int _currentNoteIndex;
+
+    [ObservableProperty]
+    private int _totalNotes = 1;
+
+    public int MaximumNoteIndex => Math.Max(0, TotalNotes - 1);
+
+    partial void OnTotalNotesChanged(int value) => OnPropertyChanged(nameof(MaximumNoteIndex));
+
+    [ObservableProperty]
     private string _currentTimeText = "00:00";
 
     [ObservableProperty]
@@ -80,6 +90,17 @@ public partial class MusicPageViewModel : ObservableObject
 
     [ObservableProperty]
     private bool _isMouseInput;
+
+    public bool AutoFocusGameOnPlayback
+    {
+        get => _configService.Config.Music.AutoFocusGameOnPlayback;
+        set
+        {
+            _configService.Config.Music.AutoFocusGameOnPlayback = value;
+            _configService.Save();
+            OnPropertyChanged();
+        }
+    }
 
     [ObservableProperty]
     private SongItemViewModel? _selectedSong;
@@ -151,7 +172,7 @@ public partial class MusicPageViewModel : ObservableObject
         }
 
         _playbackService.StateChanged += OnPlaybackStateChanged;
-        _playbackService.PositionChanged += OnPositionChanged;
+        _playbackService.NotePositionChanged += OnNotePositionChanged;
         _playbackService.PlaybackCompleted += OnPlaybackCompleted;
         _playbackService.NextTrackRequested += () => Application.Current?.Dispatcher.Invoke(NextTrack);
         _playbackService.PreviousTrackRequested += () => Application.Current?.Dispatcher.Invoke(PreviousTrack);
@@ -275,6 +296,14 @@ public partial class MusicPageViewModel : ObservableObject
         }
     }
 
+    private void TryAutoFocusGame()
+    {
+        if (AutoFocusGameOnPlayback && _processDetector != null)
+        {
+            _processDetector.ActivateGameWindow();
+        }
+    }
+
     [RelayCommand]
     private void BeginSeek()
     {
@@ -282,32 +311,67 @@ public partial class MusicPageViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void Seek(double seconds)
+    private void Scrubbing(double noteIndexVal)
     {
-        _playbackService.Seek(seconds);
+        _isSeeking = true;
+        int noteIndex = (int)Math.Round(noteIndexVal);
+        CurrentNoteIndex = Math.Clamp(noteIndex, 0, MaximumNoteIndex);
+
+        var timeline = _playbackService.CurrentTimeline;
+        if (timeline != null && timeline.Events.Count > 0)
+        {
+            int idx = Math.Clamp(CurrentNoteIndex, 0, timeline.Events.Count - 1);
+            var noteTimeMs = timeline.Events[idx].TimeMs;
+            CurrentPosition = noteTimeMs / 1000.0;
+            CurrentTimeText = TimeSpan.FromMilliseconds(noteTimeMs).ToString(@"mm\:ss");
+        }
+    }
+
+    [RelayCommand]
+    private void Seek(double noteIndexVal)
+    {
+        int noteIndex = (int)Math.Round(noteIndexVal);
+        noteIndex = Math.Clamp(noteIndex, 0, MaximumNoteIndex);
+        CurrentNoteIndex = noteIndex;
+
+        _playbackService.SeekNote(noteIndex);
         _isSeeking = false;
+
+        var timeline = _playbackService.CurrentTimeline;
+        if (timeline != null && timeline.Events.Count > 0)
+        {
+            int idx = Math.Clamp(noteIndex, 0, timeline.Events.Count - 1);
+            var noteTimeMs = timeline.Events[idx].TimeMs;
+            CurrentPosition = noteTimeMs / 1000.0;
+            CurrentTimeText = TimeSpan.FromMilliseconds(noteTimeMs).ToString(@"mm\:ss");
+        }
+
+        TryAutoFocusGame();
     }
 
     private void OnPlaybackStateChanged(PlayerState state)
     {
-        Application.Current?.Dispatcher.Invoke(() =>
+        Application.Current?.Dispatcher.InvokeAsync(() =>
         {
             IsPlaying = state == PlayerState.Playing;
             PlayPauseSymbol = IsPlaying ? SymbolRegular.Pause24 : SymbolRegular.Play24;
         });
     }
 
-    private void OnPositionChanged(double currentSec, double totalSec)
+    private void OnNotePositionChanged(int currentNote, int totalNotes, double currentSec, double totalSec)
     {
-        Application.Current?.Dispatcher.Invoke(() =>
+        Application.Current?.Dispatcher.InvokeAsync(() =>
         {
+            TotalNotes = Math.Max(1, totalNotes);
+            TotalDuration = Math.Max(1.0, totalSec);
+            TotalTimeText = TimeSpan.FromSeconds(totalSec).ToString(@"mm\:ss");
+
             if (!_isSeeking)
             {
+                CurrentNoteIndex = Math.Clamp(currentNote, 0, MaximumNoteIndex);
                 CurrentPosition = currentSec;
                 CurrentTimeText = TimeSpan.FromSeconds(currentSec).ToString(@"mm\:ss");
             }
-            TotalDuration = Math.Max(1.0, totalSec);
-            TotalTimeText = TimeSpan.FromSeconds(totalSec).ToString(@"mm\:ss");
         });
     }
 
@@ -515,7 +579,14 @@ public partial class MusicPageViewModel : ObservableObject
             CurrentSongTitle = target.Title;
             CurrentSongArtist = target.Artist;
             CurrentSongSubtitle = $"PetitMusic JSON · {target.Instrument}";
+            TotalNotes = Math.Max(1, target.Timeline.Events.Count);
+            CurrentNoteIndex = 0;
+            CurrentPosition = 0;
+            CurrentTimeText = "00:00";
+            TotalDuration = Math.Max(1.0, target.Timeline.TotalDurationMs / 1000.0);
+            TotalTimeText = TimeSpan.FromMilliseconds(target.Timeline.TotalDurationMs).ToString(@"mm\:ss");
             _playbackService.Play();
+            TryAutoFocusGame();
         }
     }
 
@@ -549,6 +620,12 @@ public partial class MusicPageViewModel : ObservableObject
             CurrentSongTitle = value.Title;
             CurrentSongArtist = value.Artist;
             CurrentSongSubtitle = $"PetitMusic JSON · {value.Instrument}";
+            TotalNotes = Math.Max(1, value.Timeline.Events.Count);
+            CurrentNoteIndex = 0;
+            CurrentPosition = 0;
+            CurrentTimeText = "00:00";
+            TotalDuration = Math.Max(1.0, value.Timeline.TotalDurationMs / 1000.0);
+            TotalTimeText = TimeSpan.FromMilliseconds(value.Timeline.TotalDurationMs).ToString(@"mm\:ss");
         }
     }
 
@@ -561,6 +638,10 @@ public partial class MusicPageViewModel : ObservableObject
             CurrentSongTitle = SelectedSong.Title;
             CurrentSongArtist = SelectedSong.Artist;
             CurrentSongSubtitle = $"PetitMusic JSON · {SelectedSong.Instrument}";
+            TotalNotes = Math.Max(1, SelectedSong.Timeline.Events.Count);
+            CurrentNoteIndex = 0;
+            TotalDuration = Math.Max(1.0, SelectedSong.Timeline.TotalDurationMs / 1000.0);
+            TotalTimeText = TimeSpan.FromMilliseconds(SelectedSong.Timeline.TotalDurationMs).ToString(@"mm\:ss");
         }
 
         if (_playbackService.State != PlayerState.Playing)
@@ -576,6 +657,7 @@ public partial class MusicPageViewModel : ObservableObject
                     }
                 }
             }
+            TryAutoFocusGame();
         }
 
         _playbackService.TogglePlayPause();
@@ -591,7 +673,14 @@ public partial class MusicPageViewModel : ObservableObject
             CurrentSongTitle = prev.Metadata.Title;
             CurrentSongArtist = prev.Metadata.Artist;
             CurrentSongSubtitle = $"PetitMusic JSON · {prev.Metadata.Instrument}";
+            TotalNotes = Math.Max(1, prev.Events.Count);
+            CurrentNoteIndex = 0;
+            CurrentPosition = 0;
+            CurrentTimeText = "00:00";
+            TotalDuration = Math.Max(1.0, prev.TotalDurationMs / 1000.0);
+            TotalTimeText = TimeSpan.FromMilliseconds(prev.TotalDurationMs).ToString(@"mm\:ss");
             _playbackService.Play();
+            TryAutoFocusGame();
         }
     }
 
@@ -608,7 +697,14 @@ public partial class MusicPageViewModel : ObservableObject
             CurrentSongTitle = next.Metadata.Title;
             CurrentSongArtist = next.Metadata.Artist;
             CurrentSongSubtitle = $"PetitMusic JSON · {next.Metadata.Instrument}";
+            TotalNotes = Math.Max(1, next.Events.Count);
+            CurrentNoteIndex = 0;
+            CurrentPosition = 0;
+            CurrentTimeText = "00:00";
+            TotalDuration = Math.Max(1.0, next.TotalDurationMs / 1000.0);
+            TotalTimeText = TimeSpan.FromMilliseconds(next.TotalDurationMs).ToString(@"mm\:ss");
             _playbackService.Play();
+            TryAutoFocusGame();
         }
     }
 
@@ -621,7 +717,14 @@ public partial class MusicPageViewModel : ObservableObject
             CurrentSongTitle = randomSong.Metadata.Title;
             CurrentSongArtist = randomSong.Metadata.Artist;
             CurrentSongSubtitle = $"PetitMusic JSON · {randomSong.Metadata.Instrument}";
+            TotalNotes = Math.Max(1, randomSong.Events.Count);
+            CurrentNoteIndex = 0;
+            CurrentPosition = 0;
+            CurrentTimeText = "00:00";
+            TotalDuration = Math.Max(1.0, randomSong.TotalDurationMs / 1000.0);
+            TotalTimeText = TimeSpan.FromMilliseconds(randomSong.TotalDurationMs).ToString(@"mm\:ss");
             _playbackService.Play();
+            TryAutoFocusGame();
         }
     }
 
@@ -630,6 +733,7 @@ public partial class MusicPageViewModel : ObservableObject
     {
         _playbackService.Stop();
         CurrentPosition = 0;
+        CurrentNoteIndex = 0;
         CurrentTimeText = "00:00";
     }
 

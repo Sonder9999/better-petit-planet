@@ -24,6 +24,9 @@ public sealed class GameProcessDetector
     [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
     private static extern bool EnumDesktopWindows(IntPtr hDesktop, EnumWindowsProc lpfn, IntPtr lParam);
 
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern void SwitchToThisWindow(IntPtr hWnd, bool fAltTab);
+
     private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
 
     public static void EnsureDefaultDesktop()
@@ -234,29 +237,51 @@ public sealed class GameProcessDetector
         }
 
         var targetHwnd = new HWND(hwnd);
+        SwitchToThisWindow(hwnd, true);
+
         if (User32.IsIconic(targetHwnd))
         {
             User32.ShowWindow(targetHwnd, ShowWindowCommand.SW_RESTORE);
         }
+        else
+        {
+            User32.ShowWindow(targetHwnd, ShowWindowCommand.SW_SHOW);
+        }
 
         var fgHwnd = User32.GetForegroundWindow();
+        if ((IntPtr)fgHwnd == hwnd)
+        {
+            return true;
+        }
+
         var foregroundThreadId = User32.GetWindowThreadProcessId(fgHwnd, out _);
+        var targetThreadId = User32.GetWindowThreadProcessId(targetHwnd, out _);
         var currentThreadId = Kernel32.GetCurrentThreadId();
 
         if (foregroundThreadId != 0 && foregroundThreadId != currentThreadId)
         {
             User32.AttachThreadInput(currentThreadId, foregroundThreadId, true);
-            User32.SetForegroundWindow(targetHwnd);
-            User32.BringWindowToTop(targetHwnd);
-            User32.AttachThreadInput(currentThreadId, foregroundThreadId, false);
         }
-        else
+        if (targetThreadId != 0 && targetThreadId != currentThreadId)
         {
-            User32.SetForegroundWindow(targetHwnd);
-            User32.BringWindowToTop(targetHwnd);
+            User32.AttachThreadInput(currentThreadId, targetThreadId, true);
         }
 
-        return true;
+        User32.keybd_event(0x12, 0, 0, IntPtr.Zero);
+        User32.SetForegroundWindow(targetHwnd);
+        User32.BringWindowToTop(targetHwnd);
+        User32.keybd_event(0x12, 0, User32.KEYEVENTF.KEYEVENTF_KEYUP, IntPtr.Zero);
+
+        if (foregroundThreadId != 0 && foregroundThreadId != currentThreadId)
+        {
+            User32.AttachThreadInput(currentThreadId, foregroundThreadId, false);
+        }
+        if (targetThreadId != 0 && targetThreadId != currentThreadId)
+        {
+            User32.AttachThreadInput(currentThreadId, targetThreadId, false);
+        }
+
+        return IsGameForeground();
     }
 
     public Rectangle GetClientSize(IntPtr hwnd)

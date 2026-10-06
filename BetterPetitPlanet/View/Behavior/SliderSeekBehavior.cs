@@ -1,19 +1,22 @@
 using System;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Controls.Primitives;
 using System.Windows.Input;
-using System.Windows.Media;
 using Microsoft.Xaml.Behaviors;
 
 namespace BetterPetitPlanet.View.Behavior;
 
 public sealed class SliderSeekBehavior : Behavior<Slider>
 {
-    private bool _isPointerSeeking;
+    private bool _isSeeking;
 
     public static readonly DependencyProperty BeginCommandProperty = DependencyProperty.Register(
         nameof(BeginCommand),
+        typeof(ICommand),
+        typeof(SliderSeekBehavior));
+
+    public static readonly DependencyProperty ScrubbingCommandProperty = DependencyProperty.Register(
+        nameof(ScrubbingCommand),
         typeof(ICommand),
         typeof(SliderSeekBehavior));
 
@@ -28,6 +31,12 @@ public sealed class SliderSeekBehavior : Behavior<Slider>
         set => SetValue(BeginCommandProperty, value);
     }
 
+    public ICommand? ScrubbingCommand
+    {
+        get => (ICommand?)GetValue(ScrubbingCommandProperty);
+        set => SetValue(ScrubbingCommandProperty, value);
+    }
+
     public ICommand? Command
     {
         get => (ICommand?)GetValue(CommandProperty);
@@ -38,6 +47,7 @@ public sealed class SliderSeekBehavior : Behavior<Slider>
     {
         base.OnAttached();
         AssociatedObject.PreviewMouseLeftButtonDown += OnPreviewMouseLeftButtonDown;
+        AssociatedObject.PreviewMouseMove += OnPreviewMouseMove;
         AssociatedObject.PreviewMouseLeftButtonUp += OnPreviewMouseLeftButtonUp;
         AssociatedObject.LostMouseCapture += OnLostMouseCapture;
     }
@@ -45,6 +55,7 @@ public sealed class SliderSeekBehavior : Behavior<Slider>
     protected override void OnDetaching()
     {
         AssociatedObject.PreviewMouseLeftButtonDown -= OnPreviewMouseLeftButtonDown;
+        AssociatedObject.PreviewMouseMove -= OnPreviewMouseMove;
         AssociatedObject.PreviewMouseLeftButtonUp -= OnPreviewMouseLeftButtonUp;
         AssociatedObject.LostMouseCapture -= OnLostMouseCapture;
         base.OnDetaching();
@@ -52,40 +63,76 @@ public sealed class SliderSeekBehavior : Behavior<Slider>
 
     private void OnPreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
-        _isPointerSeeking = true;
+        if (AssociatedObject == null) return;
+
+        _isSeeking = true;
         ExecuteBeginSeek();
 
-        if (FindVisualParent<Thumb>(e.OriginalSource as DependencyObject) != null)
+        UpdatePositionFromMouse(e);
+        AssociatedObject.CaptureMouse();
+        e.Handled = true;
+    }
+
+    private void OnPreviewMouseMove(object sender, MouseEventArgs e)
+    {
+        if (!_isSeeking || AssociatedObject == null) return;
+
+        if (e.LeftButton != MouseButtonState.Pressed)
         {
+            EndSeek(e);
             return;
         }
 
-        SeekToPointerPosition(e);
-        _isPointerSeeking = false;
-        ExecuteSeek();
+        UpdatePositionFromMouse(e);
         e.Handled = true;
     }
 
     private void OnPreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
     {
-        if (!_isPointerSeeking)
-        {
-            return;
-        }
-
-        _isPointerSeeking = false;
-        ExecuteSeek();
+        if (!_isSeeking) return;
+        EndSeek(e);
+        e.Handled = true;
     }
 
     private void OnLostMouseCapture(object sender, MouseEventArgs e)
     {
-        if (!_isPointerSeeking || Mouse.LeftButton == MouseButtonState.Pressed)
+        if (!_isSeeking) return;
+        if (Mouse.LeftButton == MouseButtonState.Pressed) return;
+        EndSeek(null);
+    }
+
+    private void EndSeek(MouseEventArgs? e)
+    {
+        if (!_isSeeking) return;
+        _isSeeking = false;
+
+        if (AssociatedObject?.IsMouseCaptured == true)
         {
-            return;
+            AssociatedObject.ReleaseMouseCapture();
         }
 
-        _isPointerSeeking = false;
-        ExecuteSeek();
+        if (e != null && AssociatedObject != null)
+        {
+            UpdatePositionFromMouse(e);
+        }
+
+        ExecuteCommitSeek(AssociatedObject?.Value ?? 0);
+    }
+
+    private void UpdatePositionFromMouse(MouseEventArgs e)
+    {
+        if (AssociatedObject == null) return;
+
+        var pos = e.GetPosition(AssociatedObject);
+        var width = AssociatedObject.ActualWidth;
+        if (width <= 0) return;
+
+        var ratio = Math.Clamp(pos.X / width, 0.0, 1.0);
+        var targetValue = AssociatedObject.Minimum + (AssociatedObject.Maximum - AssociatedObject.Minimum) * ratio;
+        targetValue = Math.Clamp(targetValue, AssociatedObject.Minimum, AssociatedObject.Maximum);
+
+        AssociatedObject.Value = targetValue;
+        ExecuteScrubbing(targetValue);
     }
 
     private void ExecuteBeginSeek()
@@ -96,39 +143,19 @@ public sealed class SliderSeekBehavior : Behavior<Slider>
         }
     }
 
-    private void ExecuteSeek()
+    private void ExecuteScrubbing(double value)
     {
-        if (AssociatedObject == null) return;
-        var value = AssociatedObject.Value;
+        if (ScrubbingCommand?.CanExecute(value) == true)
+        {
+            ScrubbingCommand.Execute(value);
+        }
+    }
+
+    private void ExecuteCommitSeek(double value)
+    {
         if (Command?.CanExecute(value) == true)
         {
             Command.Execute(value);
         }
-    }
-
-    private void SeekToPointerPosition(MouseEventArgs e)
-    {
-        if (AssociatedObject == null) return;
-
-        var position = e.GetPosition(AssociatedObject);
-        var width = AssociatedObject.ActualWidth;
-        if (width <= 0) return;
-
-        var ratio = Math.Clamp(position.X / width, 0.0, 1.0);
-        var targetValue = AssociatedObject.Minimum + (AssociatedObject.Maximum - AssociatedObject.Minimum) * ratio;
-        AssociatedObject.Value = targetValue;
-    }
-
-    private static T? FindVisualParent<T>(DependencyObject? child) where T : DependencyObject
-    {
-        while (child != null)
-        {
-            if (child is T parent)
-            {
-                return parent;
-            }
-            child = VisualTreeHelper.GetParent(child);
-        }
-        return null;
     }
 }

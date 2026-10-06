@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using BetterPetitPlanet.Core.Config;
@@ -33,8 +34,9 @@ public sealed class MusicPlaybackService : IDisposable
     private double _playbackSpeed = 1.0;
     private int _currentEventIndex;
     private double _pausedElapsedMs;
+    private double _initialStartMs;
+    private volatile bool _seekOccurred;
     private long _startTimestamp;
-    private bool _hasGameBeenFocused;
 
     public PlayerState State => _state;
     public PerformanceTimeline? CurrentTimeline => _currentTimeline;
@@ -42,6 +44,7 @@ public sealed class MusicPlaybackService : IDisposable
 
     public event Action<PlayerState>? StateChanged;
     public event Action<double, double>? PositionChanged;
+    public event Action<int, int, double, double>? NotePositionChanged;
     public event Action<PerformanceEvent, int, int>? NotePlayed;
     public event Action? PlaybackCompleted;
 
@@ -73,11 +76,23 @@ public sealed class MusicPlaybackService : IDisposable
         Stop();
         lock (_stateLock)
         {
+            if (timeline.Events.Count > 0 && timeline.Events[0].TimeMs > 0)
+            {
+                int leadIn = timeline.Events[0].TimeMs;
+                foreach (var ev in timeline.Events)
+                {
+                    ev.TimeMs -= leadIn;
+                }
+                timeline.TotalDurationMs = timeline.Events.Max(e => e.TimeMs + e.DurationMs);
+            }
+
             _currentTimeline = timeline;
             _currentEventIndex = 0;
             _pausedElapsedMs = 0;
+            _initialStartMs = 0;
+            _seekOccurred = false;
             SetState(PlayerState.Idle);
-            PositionChanged?.Invoke(0, timeline.TotalDurationMs / 1000.0);
+            NotifyPosition(0, timeline.Events.Count, 0, timeline.TotalDurationMs / 1000.0);
             _logger?.LogInformation("Loaded score: {Title} ({Events} notes)", timeline.Metadata.Title, timeline.Events.Count);
         }
     }
@@ -89,9 +104,10 @@ public sealed class MusicPlaybackService : IDisposable
             if (_currentTimeline == null || _currentTimeline.Events.Count == 0) return;
             if (_state == PlayerState.Playing) return;
 
-            // Activate game window if present
-            _processDetector.ActivateGameWindow();
-            _hasGameBeenFocused = false;
+            if (_configService.Config.Music.AutoFocusGameOnPlayback)
+            {
+                _processDetector.ActivateGameWindow();
+            }
 
             if (_state == PlayerState.Paused)
             {
@@ -102,9 +118,22 @@ public sealed class MusicPlaybackService : IDisposable
             }
 
             _cts = new CancellationTokenSource();
-            _currentEventIndex = 0;
-            _pausedElapsedMs = 0;
-            _startTimestamp = Stopwatch.GetTimestamp();
+            _seekOccurred = false;
+
+            if (_initialStartMs > 0 || _currentEventIndex > 0)
+            {
+                double startMs = _currentTimeline.Events[_currentEventIndex].TimeMs;
+                _pausedElapsedMs = startMs / _playbackSpeed;
+                _startTimestamp = Stopwatch.GetTimestamp() - (long)(_pausedElapsedMs * Stopwatch.Frequency / 1000.0);
+                _initialStartMs = 0;
+            }
+            else
+            {
+                _currentEventIndex = 0;
+                _pausedElapsedMs = 0;
+                _startTimestamp = Stopwatch.GetTimestamp();
+            }
+
             SetState(PlayerState.Playing);
 
             _playbackTask = Task.Run(() => PlaybackLoop(_cts.Token));
@@ -132,8 +161,40 @@ public sealed class MusicPlaybackService : IDisposable
             _cts?.Cancel();
             _currentEventIndex = 0;
             _pausedElapsedMs = 0;
+            _initialStartMs = 0;
+            _seekOccurred = false;
             SetState(PlayerState.Stopped);
             _logger?.LogInformation("Playback stopped");
+        }
+    }
+
+    public void SeekNote(int noteIndex)
+    {
+        lock (_stateLock)
+        {
+            if (_currentTimeline == null || _currentTimeline.Events.Count == 0) return;
+
+            int clampedIndex = Math.Clamp(noteIndex, 0, _currentTimeline.Events.Count - 1);
+            _currentEventIndex = clampedIndex;
+            var targetEvent = _currentTimeline.Events[clampedIndex];
+            double targetMs = targetEvent.TimeMs;
+
+            if (_state == PlayerState.Playing)
+            {
+                _startTimestamp = Stopwatch.GetTimestamp() - (long)(targetMs / _playbackSpeed * Stopwatch.Frequency / 1000.0);
+                _seekOccurred = true;
+            }
+            else if (_state == PlayerState.Paused)
+            {
+                _pausedElapsedMs = targetMs / _playbackSpeed;
+            }
+            else
+            {
+                _initialStartMs = targetMs;
+            }
+
+            NotifyPosition(clampedIndex, _currentTimeline.Events.Count, targetMs / 1000.0, _currentTimeline.TotalDurationMs / 1000.0);
+            _logger?.LogInformation("Playback seeked to note #{Idx}/{Total} (Time {Sec:F2}s)", clampedIndex, _currentTimeline.Events.Count, targetMs / 1000.0);
         }
     }
 
@@ -151,19 +212,7 @@ public sealed class MusicPlaybackService : IDisposable
             {
                 newIndex++;
             }
-            _currentEventIndex = newIndex;
-
-            if (_state == PlayerState.Playing)
-            {
-                _startTimestamp = Stopwatch.GetTimestamp() - (long)(targetMs / _playbackSpeed * Stopwatch.Frequency / 1000.0);
-            }
-            else
-            {
-                _pausedElapsedMs = targetMs / _playbackSpeed;
-            }
-
-            PositionChanged?.Invoke(targetMs / 1000.0, _currentTimeline.TotalDurationMs / 1000.0);
-            _logger?.LogInformation("Playback seeked to {Sec:F2}s (event {Idx}/{Total})", targetSeconds, newIndex, events.Count);
+            SeekNote(newIndex);
         }
     }
 
@@ -186,6 +235,12 @@ public sealed class MusicPlaybackService : IDisposable
         StateChanged?.Invoke(newState);
     }
 
+    private void NotifyPosition(int currentNote, int totalNotes, double currentSec, double totalSec)
+    {
+        PositionChanged?.Invoke(currentSec, totalSec);
+        NotePositionChanged?.Invoke(currentNote, totalNotes, currentSec, totalSec);
+    }
+
     private async Task PlaybackLoop(CancellationToken token)
     {
         var timeline = _currentTimeline;
@@ -195,6 +250,8 @@ public sealed class MusicPlaybackService : IDisposable
         int totalEvents = events.Count;
 
         long lastInstrumentCheckTs = Stopwatch.GetTimestamp();
+        long lastPositionNotifyTs = Stopwatch.GetTimestamp();
+
         while (!token.IsCancellationRequested && _currentEventIndex < totalEvents)
         {
             while (_state == PlayerState.Paused && !token.IsCancellationRequested)
@@ -205,7 +262,30 @@ public sealed class MusicPlaybackService : IDisposable
 
             var hwnd = _processDetector.FindMainWindowHandle();
 
-            // 周期性检查游戏内乐器演奏界面（每 1200ms 检测一次）
+            // 1. 严格前台焦点硬守护：当且仅当前台窗口是游戏窗口时才演奏，失焦时安全挂起等待
+            if (_configService.Config.Music.InputMode == MusicInputMode.Keyboard && !_processDetector.IsGameForeground())
+            {
+                _logger?.LogInformation("游戏失去前台焦点，演奏已自动挂起等待...");
+                while (!token.IsCancellationRequested && _state == PlayerState.Playing && !_processDetector.IsGameForeground())
+                {
+                    if (_seekOccurred)
+                    {
+                        break;
+                    }
+                    await Task.Delay(50, token);
+                }
+                if (token.IsCancellationRequested || _state != PlayerState.Playing) break;
+
+                // 重新聚焦后，重新同步 _startTimestamp，使音符不发生抢弹或错乱
+                if (_currentEventIndex < totalEvents)
+                {
+                    double curTargetMs = events[_currentEventIndex].TimeMs / _playbackSpeed;
+                    _startTimestamp = Stopwatch.GetTimestamp() - (long)(curTargetMs * Stopwatch.Frequency / 1000.0);
+                    _logger?.LogInformation("游戏重新获得前台焦点，继续演奏音符 #{Idx}。", _currentEventIndex);
+                }
+            }
+
+            // 2. 周期性检查游戏内乐器演奏界面（每 1200ms 检测一次）
             long nowTs = Stopwatch.GetTimestamp();
             if ((nowTs - lastInstrumentCheckTs) * 1000.0 / Stopwatch.Frequency >= 1200)
             {
@@ -221,53 +301,79 @@ public sealed class MusicPlaybackService : IDisposable
                 }
             }
 
-            // Check foreground if configured: only pause after the game has gained focus at least once
-            if (_configService.Config.Music.AutoPauseOnFocusLost
-                && _configService.Config.Music.InputMode == MusicInputMode.Keyboard)
-            {
-                bool isGameFg = _processDetector.IsGameForeground();
-                if (isGameFg)
-                {
-                    _hasGameBeenFocused = true;
-                }
-                else if (_hasGameBeenFocused && _currentEventIndex > 2)
-                {
-                    _logger?.LogInformation("Game window lost focus, auto-pausing playback");
-                    Pause();
-                    continue;
-                }
-            }
-
             var nextEvent = events[_currentEventIndex];
             double targetTimeMs = nextEvent.TimeMs / _playbackSpeed;
 
+            bool wasSeeked = false;
             // High precision wait
             while (!token.IsCancellationRequested && _state == PlayerState.Playing)
             {
+                if (_seekOccurred)
+                {
+                    _seekOccurred = false;
+                    wasSeeked = true;
+                    break;
+                }
+
+                // 等待期间失焦保护：跳出循环并进入外层挂起等待
+                if (_configService.Config.Music.InputMode == MusicInputMode.Keyboard && !_processDetector.IsGameForeground())
+                {
+                    break;
+                }
+
                 long now = Stopwatch.GetTimestamp();
                 double elapsedMs = (double)(now - _startTimestamp) * 1000 / Stopwatch.Frequency;
                 double remainMs = targetTimeMs - elapsedMs;
 
-                PositionChanged?.Invoke(elapsedMs / 1000.0, timeline.TotalDurationMs / 1000.0);
+                // 节流分发进度变更通知（约每 40ms 一次，25fps）
+                if ((now - lastPositionNotifyTs) * 1000.0 / Stopwatch.Frequency >= 40)
+                {
+                    lastPositionNotifyTs = now;
+                    NotifyPosition(_currentEventIndex, totalEvents, elapsedMs / 1000.0, timeline.TotalDurationMs / 1000.0);
+                }
 
                 if (remainMs <= 1.0) break;
-                if (remainMs > 15.0) await Task.Delay((int)remainMs - 10, token);
-                else Thread.SpinWait(100);
+                if (remainMs > 15.0)
+                {
+                    int delayMs = Math.Min((int)remainMs - 10, 30);
+                    await Task.Delay(delayMs, token);
+                }
+                else
+                {
+                    Thread.SpinWait(100);
+                }
+            }
+
+            if (wasSeeked)
+            {
+                continue;
             }
 
             if (token.IsCancellationRequested || _state != PlayerState.Playing) break;
 
-            // Inject keystroke
+            // 如果当前失焦，不发键并重新循环等待
+            if (_configService.Config.Music.InputMode == MusicInputMode.Keyboard && !_processDetector.IsGameForeground())
+            {
+                continue;
+            }
+
+            // 发射按键
             _transports.SendKey(nextEvent.Key, nextEvent.DurationMs, hwnd, _configService.Config.Music.InputMode);
             NotePlayed?.Invoke(nextEvent, _currentEventIndex + 1, totalEvents);
 
             _currentEventIndex++;
+            NotifyPosition(_currentEventIndex, totalEvents, targetTimeMs / 1000.0, timeline.TotalDurationMs / 1000.0);
         }
 
         if (!token.IsCancellationRequested && _currentEventIndex >= totalEvents)
         {
             _logger?.LogInformation("Song finished: {Title}", timeline.Metadata.Title);
+            _initialStartMs = 0;
+            _currentEventIndex = 0;
+            _pausedElapsedMs = 0;
+            _seekOccurred = false;
             SetState(PlayerState.Idle);
+            NotifyPosition(0, totalEvents, 0, timeline.TotalDurationMs / 1000.0);
             PlaybackCompleted?.Invoke();
         }
     }

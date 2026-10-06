@@ -149,6 +149,22 @@
                                              VerticalAlignment="Center"
                                              IsChecked="{Binding IsMouseInput, Mode=TwoWay}" />
                         </Grid>
+
+                        <Grid Margin="0,8,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel VerticalAlignment="Center">
+                                <TextBlock FontWeight="Medium" Text="操作后自动激活游戏窗口" />
+                                <TextBlock FontSize="12"
+                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                           Text="拖拽进度条或点击播放等控制操作后，自动将系统键盘焦点返还给游戏客户端" />
+                            </StackPanel>
+                            <ui:ToggleSwitch Grid.Column="1"
+                                             VerticalAlignment="Center"
+                                             IsChecked="{Binding AutoFocusGameOnPlayback, Mode=TwoWay}" />
+                        </Grid>
                     </StackPanel>
                 </Border>
             </StackPanel>

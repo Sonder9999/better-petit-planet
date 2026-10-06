@@ -121,6 +121,9 @@ public partial class App : Application
             Log.Warning("程序当前未以管理员权限运行。如果游戏星布谷地以管理员权限启动，Windows UIPI 将拦截所有的键鼠模拟输入！");
         }
 
+        var detector = _host.Services.GetRequiredService<GameProcessDetector>();
+        HardwareInputSimulator.ForegroundGuard = () => detector.IsGameForeground();
+
         // Register Triggers into dispatcher
         var dispatcher = _host.Services.GetRequiredService<TaskTriggerDispatcher>();
         var autoPickTrigger = _host.Services.GetRequiredService<AutoPickTrigger>();

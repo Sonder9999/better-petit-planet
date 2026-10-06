@@ -11,6 +11,11 @@ public static class HardwareInputSimulator
 {
     private static ILogger? _logger;
 
+    /// <summary>
+    /// 全局前台焦点硬守护委托：当且仅当返回 true 时才允许执行 SendInput 模拟按键，杜绝字符泄漏至本程序或其他应用
+    /// </summary>
+    public static Func<bool>? ForegroundGuard { get; set; }
+
     public static void Initialize(ILogger logger)
     {
         _logger = logger;
@@ -152,6 +157,12 @@ public static class HardwareInputSimulator
 
     public static bool SendKey(ushort scancode, ushort vk, bool isKeyUp)
     {
+        if (ForegroundGuard != null && !ForegroundGuard())
+        {
+            _logger?.LogWarning("HardwareInputSimulator.SendKey: 游戏未处于前台窗口，已拦截按键发送以防止误触");
+            return false;
+        }
+
         var flags = User32.KEYEVENTF.KEYEVENTF_SCANCODE;
         if (isKeyUp)
         {
@@ -183,6 +194,12 @@ public static class HardwareInputSimulator
 
     public static async Task SendKeyPressAsync(string keyName, int holdDurationMs)
     {
+        if (ForegroundGuard != null && !ForegroundGuard())
+        {
+            _logger?.LogWarning("HardwareInputSimulator.SendKeyPressAsync: 游戏未处于前台窗口，已拦截按键发送以防止误触");
+            return;
+        }
+
         var scancode = GetScancode(keyName);
         var vk = GetVirtualKey(keyName);
         if (scancode == 0 && vk == 0) return;
