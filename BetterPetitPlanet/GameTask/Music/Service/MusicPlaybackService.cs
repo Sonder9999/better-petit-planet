@@ -47,7 +47,6 @@ public sealed class MusicPlaybackService : IDisposable
 
     public event Action? NextTrackRequested;
     public event Action? PreviousTrackRequested;
-    public event Action? SwitchInstrumentRequested;
 
     private readonly InstrumentDetector? _instrumentDetector;
 
@@ -68,7 +67,6 @@ public sealed class MusicPlaybackService : IDisposable
 
     public void RequestNextTrack() => NextTrackRequested?.Invoke();
     public void RequestPreviousTrack() => PreviousTrackRequested?.Invoke();
-    public void RequestSwitchInstrument() => SwitchInstrumentRequested?.Invoke();
 
     public void LoadTimeline(PerformanceTimeline timeline)
     {

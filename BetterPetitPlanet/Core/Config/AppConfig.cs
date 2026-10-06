@@ -74,5 +74,4 @@ public sealed class HotkeyConfig
     public string ToggleMusicHotkey { get; set; } = "F9";
     public string PreviousSongHotkey { get; set; } = "F10";
     public string NextSongHotkey { get; set; } = "F11";
-    public string SwitchInstrumentHotkey { get; set; } = "F12";
 }

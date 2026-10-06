@@ -119,30 +119,5 @@
                         Text="{Binding NextSongHotkey, Mode=TwoWay}"
                         TextAlignment="Center" />
         </ui:CardControl>
-
-        <ui:CardControl Margin="0,0,0,12"
-                        Icon="{ui:SymbolIcon Apps24}">
-            <ui:CardControl.Header>
-                <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                    </Grid.RowDefinitions>
-                    <TextBlock Grid.Row="0"
-                               FontSize="14"
-                               FontWeight="Medium"
-                               Text="切换乐器快捷键" />
-                    <TextBlock Grid.Row="1"
-                               Margin="0,3,0,0"
-                               FontSize="12"
-                               Foreground="{DynamicResource TextFillColorTertiaryBrush}"
-                               Text="按下该全局快捷键可循环切换乐器类别（全部乐器 / 吉他 / 竖笛），默认 F12" />
-                </Grid>
-            </ui:CardControl.Header>
-            <ui:TextBox Width="120"
-                        Margin="0,0,12,0"
-                        Text="{Binding SwitchInstrumentHotkey, Mode=TwoWay}"
-                        TextAlignment="Center" />
-        </ui:CardControl>
     </StackPanel>
 </Page>

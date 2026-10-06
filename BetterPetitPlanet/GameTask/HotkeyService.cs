@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Windows.Forms;
 using BetterPetitPlanet.Core.Config;
 using BetterPetitPlanet.GameTask.AutoPick;
@@ -66,13 +66,11 @@ public sealed class HotkeyService : IDisposable
         var musicKey = ParseKey(_configService.Config.Hotkey.ToggleMusicHotkey, Keys.F9);
         var prevSongKey = ParseKey(_configService.Config.Hotkey.PreviousSongHotkey, Keys.F10);
         var nextSongKey = ParseKey(_configService.Config.Hotkey.NextSongHotkey, Keys.F11);
-        var switchInstKey = ParseKey(_configService.Config.Hotkey.SwitchInstrumentHotkey, Keys.F12);
 
         TryRegisterKey(pickKey, "自动拾取 (F8)");
         TryRegisterKey(musicKey, "自动演奏 (F9)");
         TryRegisterKey(prevSongKey, "上一首歌曲 (F10)");
         TryRegisterKey(nextSongKey, "下一首歌曲 (F11)");
-        TryRegisterKey(switchInstKey, "切换乐器 (F12)");
     }
 
     private void TryRegisterKey(Keys key, string description)
@@ -95,7 +93,6 @@ public sealed class HotkeyService : IDisposable
         var musicKey = ParseKey(_configService.Config.Hotkey.ToggleMusicHotkey, Keys.F9);
         var prevSongKey = ParseKey(_configService.Config.Hotkey.PreviousSongHotkey, Keys.F10);
         var nextSongKey = ParseKey(_configService.Config.Hotkey.NextSongHotkey, Keys.F11);
-        var switchInstKey = ParseKey(_configService.Config.Hotkey.SwitchInstrumentHotkey, Keys.F12);
 
         if (e.Key == pickKey)
         {
@@ -125,11 +122,6 @@ public sealed class HotkeyService : IDisposable
         {
             _playbackService.RequestNextTrack();
             _logger?.LogInformation("Hotkey requested Next Track");
-        }
-        else if (e.Key == switchInstKey)
-        {
-            _playbackService.RequestSwitchInstrument();
-            _logger?.LogInformation("Hotkey requested Switch Instrument");
         }
     }
 

@@ -19,9 +19,6 @@ public partial class HotkeyPageViewModel : ObservableObject
     [ObservableProperty]
     private string _nextSongHotkey = "F11";
 
-    [ObservableProperty]
-    private string _switchInstrumentHotkey = "F12";
-
     public HotkeyPageViewModel(IConfigService configService)
     {
         _configService = configService;
@@ -29,7 +26,6 @@ public partial class HotkeyPageViewModel : ObservableObject
         _toggleMusicHotkey = _configService.Config.Hotkey.ToggleMusicHotkey;
         _previousSongHotkey = _configService.Config.Hotkey.PreviousSongHotkey;
         _nextSongHotkey = _configService.Config.Hotkey.NextSongHotkey;
-        _switchInstrumentHotkey = _configService.Config.Hotkey.SwitchInstrumentHotkey;
     }
 
     partial void OnToggleAutoPickHotkeyChanged(string value)
@@ -53,12 +49,6 @@ public partial class HotkeyPageViewModel : ObservableObject
     partial void OnNextSongHotkeyChanged(string value)
     {
         _configService.Config.Hotkey.NextSongHotkey = value;
-        _configService.Save();
-    }
-
-    partial void OnSwitchInstrumentHotkeyChanged(string value)
-    {
-        _configService.Config.Hotkey.SwitchInstrumentHotkey = value;
         _configService.Save();
     }
 }

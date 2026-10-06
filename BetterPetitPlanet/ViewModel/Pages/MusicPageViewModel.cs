@@ -155,7 +155,6 @@ public partial class MusicPageViewModel : ObservableObject
         _playbackService.PlaybackCompleted += OnPlaybackCompleted;
         _playbackService.NextTrackRequested += () => Application.Current?.Dispatcher.Invoke(NextTrack);
         _playbackService.PreviousTrackRequested += () => Application.Current?.Dispatcher.Invoke(PreviousTrack);
-        _playbackService.SwitchInstrumentRequested += () => Application.Current?.Dispatcher.Invoke(CycleInstrument);
 
         if (_instrumentDetector != null)
         {
