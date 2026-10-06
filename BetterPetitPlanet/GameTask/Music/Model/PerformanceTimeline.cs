@@ -15,6 +15,7 @@ public sealed class PerformanceTimeline
 {
     public PetitSongMetadata Metadata { get; set; } = new();
     public List<PerformanceEvent> Events { get; set; } = [];
+    public List<SongSectionMarker> Sections { get; set; } = [];
     public int TotalDurationMs { get; set; }
     public string FilePath { get; set; } = string.Empty;
 

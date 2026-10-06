@@ -83,7 +83,16 @@ public sealed class MusicPlaybackService : IDisposable
                 {
                     ev.TimeMs -= leadIn;
                 }
+                foreach (var sec in timeline.Sections)
+                {
+                    sec.TimeMs = Math.Max(0, sec.TimeMs - leadIn);
+                }
                 timeline.TotalDurationMs = timeline.Events.Max(e => e.TimeMs + e.DurationMs);
+            }
+
+            if (timeline.Sections.Count == 0 && timeline.Events.Count > 0)
+            {
+                timeline.Sections = PetitScoreParser.ExtractSections(timeline.Events, timeline.TotalDurationMs);
             }
 
             _currentTimeline = timeline;

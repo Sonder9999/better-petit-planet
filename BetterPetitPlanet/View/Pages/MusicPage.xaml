@@ -6,6 +6,8 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:converters="clr-namespace:BetterPetitPlanet.View.Converters"
+             xmlns:model="clr-namespace:BetterPetitPlanet.GameTask.Music.Model"
              xmlns:viewModel="clr-namespace:BetterPetitPlanet.ViewModel.Pages"
              d:DataContext="{d:DesignInstance Type=viewModel:MusicPageViewModel}"
              d:DesignHeight="800"
@@ -14,6 +16,7 @@
              mc:Ignorable="d">
 
     <UserControl.Resources>
+        <converters:ProgressToMarginConverter x:Key="ProgressToMarginConverter" />
         <Style x:Key="MusicCardStyle" TargetType="Border">
             <Setter Property="Padding" Value="18" />
             <Setter Property="Background" Value="{DynamicResource CardBackgroundFillColorDefaultBrush}" />
@@ -178,6 +181,46 @@
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter TargetName="TrackBackground" Property="Height" Value="6" />
                                 <Setter TargetName="TrackBackground" Property="Opacity" Value="0.5" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="TrackMarkerButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="HorizontalAlignment" Value="Left" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Width" Value="10" />
+            <Setter Property="Height" Value="20" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Grid Background="Transparent">
+                            <!-- 精致小圆点标记 -->
+                            <Border x:Name="MarkerDot"
+                                    Width="6"
+                                    Height="6"
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center"
+                                    Background="#E0E0E0"
+                                    BorderBrush="#40000000"
+                                    BorderThickness="1"
+                                    CornerRadius="3"
+                                    Opacity="0.75" />
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="MarkerDot" Property="Width" Value="8" />
+                                <Setter TargetName="MarkerDot" Property="Height" Value="8" />
+                                <Setter TargetName="MarkerDot" Property="CornerRadius" Value="4" />
+                                <Setter TargetName="MarkerDot" Property="Opacity" Value="1.0" />
+                                <Setter TargetName="MarkerDot" Property="Background" Value="#FFFFFFFF" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -424,25 +467,61 @@
                     <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
-                <!-- 顶部无缝吸附进度滑块 -->
-                <Slider Height="26"
-                        Margin="0,-13,0,0"
-                        Panel.ZIndex="10"
-                        VerticalAlignment="Top"
-                        Background="Transparent"
-                        IsMoveToPointEnabled="True"
-                        Maximum="{Binding MaximumNoteIndex}"
-                        Minimum="0"
-                        SmallChange="1"
-                        Style="{StaticResource PlaybackSliderStyle}"
-                        ToolTip="{Binding CurrentTimeText, StringFormat='播放进度：{0}'}"
-                        Value="{Binding CurrentNoteIndex, Mode=TwoWay}">
-                    <b:Interaction.Behaviors>
-                        <behavior:SliderSeekBehavior BeginCommand="{Binding BeginSeekCommand}"
-                                                     ScrubbingCommand="{Binding ScrubbingCommand}"
-                                                     Command="{Binding SeekCommand}" />
-                    </b:Interaction.Behaviors>
-                </Slider>
+                <!-- 顶部无缝吸附进度滑块与段落标记层 -->
+                <Grid x:Name="SliderContainer"
+                      Height="26"
+                      Margin="0,-13,0,0"
+                      Panel.ZIndex="10"
+                      VerticalAlignment="Top">
+                    <Slider Height="26"
+                            VerticalAlignment="Top"
+                            Background="Transparent"
+                            IsMoveToPointEnabled="True"
+                            Maximum="{Binding MaximumNoteIndex}"
+                            Minimum="0"
+                            SmallChange="1"
+                            Style="{StaticResource PlaybackSliderStyle}"
+                            ToolTip="{Binding CurrentTimeText, StringFormat='播放进度：{0}'}"
+                            Value="{Binding CurrentNoteIndex, Mode=TwoWay}">
+                        <b:Interaction.Behaviors>
+                            <behavior:SliderSeekBehavior BeginCommand="{Binding BeginSeekCommand}"
+                                                         ScrubbingCommand="{Binding ScrubbingCommand}"
+                                                         Command="{Binding SeekCommand}" />
+                        </b:Interaction.Behaviors>
+                    </Slider>
+
+                    <!-- 段落标记层 (放置在滑块轨道上方) -->
+                    <ItemsControl ItemsSource="{Binding SectionMarkers}"
+                                  Background="{x:Null}"
+                                  Focusable="False">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <Grid Background="{x:Null}" />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemContainerStyle>
+                            <Style TargetType="ContentPresenter">
+                                <Setter Property="HorizontalAlignment" Value="Left" />
+                                <Setter Property="VerticalAlignment" Value="Center" />
+                            </Style>
+                        </ItemsControl.ItemContainerStyle>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="{x:Type model:SongSectionMarker}">
+                                <Button Style="{StaticResource TrackMarkerButtonStyle}"
+                                        Command="{Binding DataContext.SeekSectionCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                        CommandParameter="{Binding}"
+                                        ToolTip="{Binding ToolTipText}">
+                                    <Button.Margin>
+                                        <MultiBinding Converter="{StaticResource ProgressToMarginConverter}" ConverterParameter="10">
+                                            <Binding Path="NormalizedProgress" />
+                                            <Binding Path="ActualWidth" ElementName="SliderContainer" />
+                                        </MultiBinding>
+                                    </Button.Margin>
+                                </Button>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Grid>
 
                 <!-- 时间显示条 -->
                 <Grid Margin="20,5,20,0">

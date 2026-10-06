@@ -120,6 +120,13 @@ public partial class MusicPageViewModel : ObservableObject
     public string MusicFolderDisplayText => string.IsNullOrWhiteSpace(SongsDirectory) ? "尚未选择目录" : SongsDirectory;
     public string InputModeDisplayText => IsMouseInput ? "鼠标" : "键盘";
 
+    public ObservableCollection<SongSectionMarker> SectionMarkers { get; } = [];
+
+    [ObservableProperty]
+    private SongSectionMarker? _currentSection;
+
+    public bool HasSections => SectionMarkers.Count > 0;
+
     public ObservableCollection<SongItemViewModel> Songs { get; } = [];
     private readonly ObservableCollection<SongItemViewModel> _allSongs = [];
 
@@ -325,11 +332,19 @@ public partial class MusicPageViewModel : ObservableObject
             CurrentPosition = noteTimeMs / 1000.0;
             CurrentTimeText = TimeSpan.FromMilliseconds(noteTimeMs).ToString(@"mm\:ss");
         }
+        UpdateActiveSection(CurrentNoteIndex);
     }
 
     [RelayCommand]
     private void Seek(double noteIndexVal)
     {
+        // 1. 若当前尚未载入曲目但已选中歌曲，先载入曲目
+        if (_playbackService.CurrentTimeline == null && SelectedSong?.Timeline != null)
+        {
+            _playbackService.LoadTimeline(SelectedSong.Timeline);
+            SetupSongDisplay(SelectedSong.Timeline);
+        }
+
         int noteIndex = (int)Math.Round(noteIndexVal);
         noteIndex = Math.Clamp(noteIndex, 0, MaximumNoteIndex);
         CurrentNoteIndex = noteIndex;
@@ -346,7 +361,63 @@ public partial class MusicPageViewModel : ObservableObject
             CurrentTimeText = TimeSpan.FromMilliseconds(noteTimeMs).ToString(@"mm\:ss");
         }
 
+        UpdateActiveSection(noteIndex);
+
+        // 2. 真正的音乐播放器体验：点击进度条任意位置直接开始/继续播放
+        if (_playbackService.CurrentTimeline != null && _playbackService.State != PlayerState.Playing)
+        {
+            if (_processDetector != null && _instrumentDetector != null && _instrumentDetector.IsTemplateLoaded)
+            {
+                var hwnd = _processDetector.FindMainWindowHandle();
+                if (hwnd != IntPtr.Zero && !ConfirmContinuePlayingIfNotReady(hwnd))
+                {
+                    return;
+                }
+            }
+
+            _playbackService.Play();
+        }
+
+        // 3. 激活游戏窗口确保按键发送与演奏立即响应
         TryAutoFocusGame();
+    }
+
+    [RelayCommand]
+    private void SeekSection(SongSectionMarker? section)
+    {
+        if (section == null) return;
+        Log.Information("跳转至段落：{Section} (音符 #{Idx}, 时间 {Time})", section.Name, section.NoteIndex + 1, section.DisplayTime);
+        Seek(section.NoteIndex);
+    }
+
+    public void UpdateSectionMarkers(PerformanceTimeline? timeline)
+    {
+        SectionMarkers.Clear();
+        if (timeline?.Sections != null)
+        {
+            foreach (var sec in timeline.Sections)
+            {
+                SectionMarkers.Add(sec);
+            }
+        }
+        OnPropertyChanged(nameof(HasSections));
+        UpdateActiveSection(CurrentNoteIndex);
+    }
+
+    private void UpdateActiveSection(int currentNote)
+    {
+        if (SectionMarkers.Count == 0)
+        {
+            CurrentSection = null;
+            return;
+        }
+
+        var active = SectionMarkers.LastOrDefault(s => s.NoteIndex <= currentNote) ?? SectionMarkers[0];
+        foreach (var s in SectionMarkers)
+        {
+            s.IsActive = (s == active);
+        }
+        CurrentSection = active;
     }
 
     private void OnPlaybackStateChanged(PlayerState state)
@@ -371,6 +442,7 @@ public partial class MusicPageViewModel : ObservableObject
                 CurrentNoteIndex = Math.Clamp(currentNote, 0, MaximumNoteIndex);
                 CurrentPosition = currentSec;
                 CurrentTimeText = TimeSpan.FromSeconds(currentSec).ToString(@"mm\:ss");
+                UpdateActiveSection(CurrentNoteIndex);
             }
         });
     }
@@ -557,6 +629,20 @@ public partial class MusicPageViewModel : ObservableObject
 
     partial void OnSearchTextChanged(string value) => ApplyFilter();
 
+    private void SetupSongDisplay(PerformanceTimeline timeline)
+    {
+        CurrentSongTitle = timeline.Metadata.Title;
+        CurrentSongArtist = string.IsNullOrWhiteSpace(timeline.Metadata.Artist) ? "未知艺术家" : timeline.Metadata.Artist;
+        CurrentSongSubtitle = $"PetitMusic JSON · {timeline.Metadata.Instrument}";
+        TotalNotes = Math.Max(1, timeline.Events.Count);
+        CurrentNoteIndex = 0;
+        CurrentPosition = 0;
+        CurrentTimeText = "00:00";
+        TotalDuration = Math.Max(1.0, timeline.TotalDurationMs / 1000.0);
+        TotalTimeText = TimeSpan.FromMilliseconds(timeline.TotalDurationMs).ToString(@"mm\:ss");
+        UpdateSectionMarkers(timeline);
+    }
+
     [RelayCommand]
     private void PlaySelected(SongItemViewModel? song)
     {
@@ -576,15 +662,7 @@ public partial class MusicPageViewModel : ObservableObject
             }
 
             _playbackService.LoadTimeline(target.Timeline);
-            CurrentSongTitle = target.Title;
-            CurrentSongArtist = target.Artist;
-            CurrentSongSubtitle = $"PetitMusic JSON · {target.Instrument}";
-            TotalNotes = Math.Max(1, target.Timeline.Events.Count);
-            CurrentNoteIndex = 0;
-            CurrentPosition = 0;
-            CurrentTimeText = "00:00";
-            TotalDuration = Math.Max(1.0, target.Timeline.TotalDurationMs / 1000.0);
-            TotalTimeText = TimeSpan.FromMilliseconds(target.Timeline.TotalDurationMs).ToString(@"mm\:ss");
+            SetupSongDisplay(target.Timeline);
             _playbackService.Play();
             TryAutoFocusGame();
         }
@@ -617,15 +695,7 @@ public partial class MusicPageViewModel : ObservableObject
         if (value?.Timeline != null)
         {
             _playbackService.LoadTimeline(value.Timeline);
-            CurrentSongTitle = value.Title;
-            CurrentSongArtist = value.Artist;
-            CurrentSongSubtitle = $"PetitMusic JSON · {value.Instrument}";
-            TotalNotes = Math.Max(1, value.Timeline.Events.Count);
-            CurrentNoteIndex = 0;
-            CurrentPosition = 0;
-            CurrentTimeText = "00:00";
-            TotalDuration = Math.Max(1.0, value.Timeline.TotalDurationMs / 1000.0);
-            TotalTimeText = TimeSpan.FromMilliseconds(value.Timeline.TotalDurationMs).ToString(@"mm\:ss");
+            SetupSongDisplay(value.Timeline);
         }
     }
 
@@ -635,13 +705,7 @@ public partial class MusicPageViewModel : ObservableObject
         if (_playbackService.CurrentTimeline == null && SelectedSong != null)
         {
             _playbackService.LoadTimeline(SelectedSong.Timeline);
-            CurrentSongTitle = SelectedSong.Title;
-            CurrentSongArtist = SelectedSong.Artist;
-            CurrentSongSubtitle = $"PetitMusic JSON · {SelectedSong.Instrument}";
-            TotalNotes = Math.Max(1, SelectedSong.Timeline.Events.Count);
-            CurrentNoteIndex = 0;
-            TotalDuration = Math.Max(1.0, SelectedSong.Timeline.TotalDurationMs / 1000.0);
-            TotalTimeText = TimeSpan.FromMilliseconds(SelectedSong.Timeline.TotalDurationMs).ToString(@"mm\:ss");
+            SetupSongDisplay(SelectedSong.Timeline);
         }
 
         if (_playbackService.State != PlayerState.Playing)
@@ -670,15 +734,7 @@ public partial class MusicPageViewModel : ObservableObject
         if (prev != null)
         {
             _playbackService.LoadTimeline(prev);
-            CurrentSongTitle = prev.Metadata.Title;
-            CurrentSongArtist = prev.Metadata.Artist;
-            CurrentSongSubtitle = $"PetitMusic JSON · {prev.Metadata.Instrument}";
-            TotalNotes = Math.Max(1, prev.Events.Count);
-            CurrentNoteIndex = 0;
-            CurrentPosition = 0;
-            CurrentTimeText = "00:00";
-            TotalDuration = Math.Max(1.0, prev.TotalDurationMs / 1000.0);
-            TotalTimeText = TimeSpan.FromMilliseconds(prev.TotalDurationMs).ToString(@"mm\:ss");
+            SetupSongDisplay(prev);
             _playbackService.Play();
             TryAutoFocusGame();
         }
@@ -694,15 +750,7 @@ public partial class MusicPageViewModel : ObservableObject
         if (next != null)
         {
             _playbackService.LoadTimeline(next);
-            CurrentSongTitle = next.Metadata.Title;
-            CurrentSongArtist = next.Metadata.Artist;
-            CurrentSongSubtitle = $"PetitMusic JSON · {next.Metadata.Instrument}";
-            TotalNotes = Math.Max(1, next.Events.Count);
-            CurrentNoteIndex = 0;
-            CurrentPosition = 0;
-            CurrentTimeText = "00:00";
-            TotalDuration = Math.Max(1.0, next.TotalDurationMs / 1000.0);
-            TotalTimeText = TimeSpan.FromMilliseconds(next.TotalDurationMs).ToString(@"mm\:ss");
+            SetupSongDisplay(next);
             _playbackService.Play();
             TryAutoFocusGame();
         }
@@ -714,15 +762,7 @@ public partial class MusicPageViewModel : ObservableObject
         if (randomSong != null)
         {
             _playbackService.LoadTimeline(randomSong);
-            CurrentSongTitle = randomSong.Metadata.Title;
-            CurrentSongArtist = randomSong.Metadata.Artist;
-            CurrentSongSubtitle = $"PetitMusic JSON · {randomSong.Metadata.Instrument}";
-            TotalNotes = Math.Max(1, randomSong.Events.Count);
-            CurrentNoteIndex = 0;
-            CurrentPosition = 0;
-            CurrentTimeText = "00:00";
-            TotalDuration = Math.Max(1.0, randomSong.TotalDurationMs / 1000.0);
-            TotalTimeText = TimeSpan.FromMilliseconds(randomSong.TotalDurationMs).ToString(@"mm\:ss");
+            SetupSongDisplay(randomSong);
             _playbackService.Play();
             TryAutoFocusGame();
         }
