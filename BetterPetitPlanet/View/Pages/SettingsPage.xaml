@@ -44,60 +44,6 @@
                             Text="{Binding ProcessName, Mode=TwoWay}" />
             </ui:CardControl>
 
-            <!-- 游戏主程序路径 -->
-            <ui:CardControl Margin="0,0,0,12"
-                            Icon="{ui:SymbolIcon Folder24}">
-                <ui:CardControl.Header>
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                        </Grid.RowDefinitions>
-                        <TextBlock Grid.Row="0"
-                                   FontSize="14"
-                                   FontWeight="Medium"
-                                   Text="游戏客户端可执行程序路径" />
-                        <TextBlock Grid.Row="1"
-                                   Margin="0,3,0,0"
-                                   FontSize="12"
-                                   Foreground="{DynamicResource TextFillColorTertiaryBrush}"
-                                   Text="配置星布谷地游戏启动文件路径，用于自动拉起游戏" />
-                    </Grid>
-                </ui:CardControl.Header>
-                <StackPanel Margin="0,0,12,0" Orientation="Horizontal">
-                    <ui:TextBox Width="260"
-                                Margin="0,0,8,0"
-                                IsReadOnly="True"
-                                Text="{Binding GameExecutablePath}" />
-                    <ui:Button Command="{Binding BrowseGamePathCommand}" Content="浏览..." />
-                </StackPanel>
-            </ui:CardControl>
-
-            <!-- 截图捕获方式 -->
-            <ui:CardControl Margin="0,0,0,12"
-                            Icon="{ui:SymbolIcon Camera24}">
-                <ui:CardControl.Header>
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                        </Grid.RowDefinitions>
-                        <TextBlock Grid.Row="0"
-                                   FontSize="14"
-                                   FontWeight="Medium"
-                                   Text="截图捕获方式" />
-                        <TextBlock Grid.Row="1"
-                                   Margin="0,3,0,0"
-                                   FontSize="12"
-                                   Foreground="{DynamicResource TextFillColorTertiaryBrush}"
-                                   Text="推荐选择 WindowsGraphicsCapture；带*的模式在当前游戏环境下不可用" />
-                    </Grid>
-                </ui:CardControl.Header>
-                <ComboBox Width="230"
-                          Margin="0,0,12,0"
-                          ItemsSource="{Binding AvailableCaptureModes}"
-                          SelectedItem="{Binding SelectedCaptureMode, Mode=TwoWay}" />
-            </ui:CardControl>
 
             <!-- 日志目录 -->
             <ui:CardControl Margin="0,0,0,12"

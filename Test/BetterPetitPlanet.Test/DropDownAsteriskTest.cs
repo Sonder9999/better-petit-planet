@@ -25,15 +25,6 @@ public class DropDownAsteriskTest
         Assert.Equal("WindowsGraphicsCapture", vm.CaptureMode);
     }
 
-    [Fact]
-    public void TestSettingsPageCaptureModesContainAsterisks()
-    {
-        var configService = new FakeConfigService();
-        var vm = new SettingsPageViewModel(configService);
-        Assert.Contains("WindowsGraphicsCapture", vm.AvailableCaptureModes);
-        Assert.Contains("PrintWindow", vm.AvailableCaptureModes);
-        Assert.Equal("WindowsGraphicsCapture", vm.SelectedCaptureMode);
-    }
 
     [Fact]
     public void TestTriggerSettingsOcrEnginesContainAsterisks()
