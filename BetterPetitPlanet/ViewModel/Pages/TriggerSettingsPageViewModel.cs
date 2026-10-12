@@ -23,6 +23,9 @@ public partial class TriggerSettingsPageViewModel : ObservableObject, IDisposabl
     private bool _autoPickEnabled;
 
     [ObservableProperty]
+    private bool _itemNameRecognitionEnabled;
+
+    [ObservableProperty]
     private string _selectedOcrEngine = "DirectML";
 
     [ObservableProperty]
@@ -113,6 +116,7 @@ public partial class TriggerSettingsPageViewModel : ObservableObject, IDisposabl
         {
             var cfg = _configService.Config.AutoPick;
             AutoPickEnabled = cfg.Enabled;
+            ItemNameRecognitionEnabled = cfg.ItemNameRecognition.Enabled;
             if (cfg.OcrEngine.StartsWith("Rapid", System.StringComparison.OrdinalIgnoreCase))
             {
                 SelectedOcrEngine = "Rapid*";
@@ -185,6 +189,7 @@ public partial class TriggerSettingsPageViewModel : ObservableObject, IDisposabl
 
         var cfg = _configService.Config.AutoPick;
         cfg.Enabled = AutoPickEnabled;
+        cfg.ItemNameRecognition.Enabled = ItemNameRecognitionEnabled;
         cfg.OcrEngine = SelectedOcrEngine.Replace("*", "").Trim();
         cfg.PickKey = SelectedPickKey;
         cfg.PressDurationMs = PressDurationMs;
@@ -255,6 +260,7 @@ public partial class TriggerSettingsPageViewModel : ObservableObject, IDisposabl
         }
     }
     partial void OnSelectedOcrEngineChanged(string value) { if (!_isLoading) SaveToConfig(); }
+    partial void OnItemNameRecognitionEnabledChanged(bool value) { if (!_isLoading) SaveToConfig(); }
     partial void OnSelectedPickKeyChanged(string value) { if (!_isLoading) SaveToConfig(); }
     partial void OnPressDurationMsChanged(int value) { if (!_isLoading) SaveToConfig(); }
     partial void OnCooldownMsChanged(int value) { if (!_isLoading) SaveToConfig(); }

@@ -16,6 +16,7 @@ public sealed class AutoPickTrigger : ITaskTrigger
     private readonly IConfigService _configService;
     private readonly GameProcessDetector _processDetector;
     private readonly IOcrEngine _ocrEngine;
+    private readonly ItemNameRecognitionService? _itemNameRecognition;
 
     private long _lastPickTimestamp;
     private int _pickCount;
@@ -42,12 +43,14 @@ public sealed class AutoPickTrigger : ITaskTrigger
         IConfigService configService,
         GameProcessDetector processDetector,
         IOcrEngine ocrEngine,
-        ILogger<AutoPickTrigger>? logger = null)
+        ILogger<AutoPickTrigger>? logger = null,
+        ItemNameRecognitionService? itemNameRecognition = null)
     {
         _configService = configService;
         _processDetector = processDetector;
         _ocrEngine = ocrEngine;
         _logger = logger;
+        _itemNameRecognition = itemNameRecognition;
 
         _isEnabled = _configService.Config.AutoPick.Enabled;
     }
@@ -138,6 +141,9 @@ public sealed class AutoPickTrigger : ITaskTrigger
 
             // Inject key press with duration using hardware scancode
             InjectKeyPress(config.PickKey, config.PressDurationMs, content.Hwnd);
+
+            // Optional diagnostics only: key injection is already queued above.
+            _itemNameRecognition?.TryQueue(content.Frame);
         }
         catch (Exception ex)
         {

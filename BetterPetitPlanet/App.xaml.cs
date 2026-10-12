@@ -58,6 +58,18 @@ public partial class App : Application
 
             // AutoPick services
             services.AddSingleton<IOcrEngine, DirectMlOcrEngine>();
+            services.AddSingleton(sp =>
+            {
+                var configService = sp.GetRequiredService<IConfigService>();
+                return new ItemNameRecognitionService(configService, () =>
+                {
+                    // Lazy background initialization; never share the pickup OCR session lock.
+                    var detector = new DirectMlDetEngine(configService.Config.AutoPick.ItemNameRecognition.Detection);
+                    try { return new ItemNameRecognizer(detector, new DirectMlOcrEngine(),
+                        Math.Clamp(configService.Config.AutoPick.ItemNameRecognition.MinimumTextLength, 1, 64)); }
+                    catch { detector.Dispose(); throw; }
+                }, sp.GetRequiredService<ILogger<AutoPickTrigger>>());
+            });
             services.AddSingleton<AutoPickTrigger>();
 
             // Music services

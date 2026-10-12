@@ -21,6 +21,12 @@ public sealed class GeneralConfig
 
 public sealed class AutoPickConfig
 {
+    private ItemNameRecognitionConfig _itemNameRecognition = new();
+    public ItemNameRecognitionConfig ItemNameRecognition
+    {
+        get => _itemNameRecognition;
+        set => _itemNameRecognition = value ?? new();
+    }
     public bool Enabled { get; set; } = false;
     public string OcrEngine { get; set; } = "DirectML";
     public string PickKey { get; set; } = "F";
