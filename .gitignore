@@ -4,6 +4,7 @@ obj/
 publish/
 [Dd]ebug/
 [Rr]elease/
+*.zip
 *.user
 *.suo
 *.userosscache
