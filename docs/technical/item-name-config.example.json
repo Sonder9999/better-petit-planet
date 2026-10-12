@@ -1,0 +1,23 @@
+{
+  "AutoPick": {
+    "ItemNameRecognition": {
+      "Enabled": false,
+      "MinimumTextLength": 2,
+      "XMinRatio": 0.20,
+      "XMaxRatio": 0.75,
+      "YMinRatio": 0.25,
+      "YMaxRatio": 0.75,
+      "AnchorXRatio": 0.50,
+      "AnchorYRatio": 0.55,
+      "Detection": {
+        "ModelPath": "Assets/Models/Ocr/ch_PP-OCRv3_det_infer.onnx",
+        "MaxSideLength": 960,
+        "BinaryThreshold": 0.3,
+        "BoxThreshold": 0.5,
+        "UnclipRatio": 1.5,
+        "DeviceId": 0,
+        "EnableCpuFallback": true
+      }
+    }
+  }
+}

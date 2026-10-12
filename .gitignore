@@ -21,8 +21,13 @@ data/songs/
 data/logs/
 data/snapshots/
 data/cache/
+data/validation/
 data/*.db
 config/config.json
+
+# Test Artifacts & Local Fixtures
+Test/**/Validation/
+Test/**/Fixtures/item-name-samples.json
 
 # Local artifacts
 *.log

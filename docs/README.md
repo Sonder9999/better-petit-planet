@@ -16,6 +16,7 @@ BetterPetitPlanet 是针对游戏《星布谷地》（Petit Planet）开发的�
 - [竖笛检测与多乐器兼容扩展](technical/recorder-and-instruments.md)：竖笛特征 ROI 识别算法、乐器资源分类存储规范，以及面向未来乐器接入的通用扩展设计。
 - [简谱解析与演奏调度引擎](technical/music-parser-and-playback.md)：简谱语法树解析、高精度微秒级时间调度器、前后台按键模拟实现。
 - [DirectML GPU 加速 OCR 与自动拾取](technical/directml-ocr-autopick.md)：基于 DirectML 的 ONNX Runtime OCR 推理流控与视口自适应变换（明确标注目前仅测试 2K 分辨率）。
+- [自动拾取物品名称辅助日志](technical/autopick-item-name.md)：默认关闭的 DBNet 检测、最近文字候选识别、非阻塞后台日志与截图验证。
 - [官网主视觉动态逆向解析](technical/dynamic-official-cover.md)：星布谷地官网 Nuxt 分块动态哈希解析、内存流式三层视差呈现（说明未来动态动画支持规划）。
 
 ### 3. 视觉与交互设计 (`design/`)

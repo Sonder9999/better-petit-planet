@@ -26,10 +26,11 @@ dotnet test
 
 该脚本会自动完成以下步骤：
 1. 编译 64 位 Windows 平台 Release 产物（输出至 `release/` 目录）。
-2. 自动将 `BetterPetitPlanet/Assets/Models/Ocr/ch_PP-OCRv3_rec_infer.onnx` 复制至 `release/Assets/Models/Ocr/`。
-3. 清理 `release/data/songs/` 下的多余文件，仅将以下两首默认测试曲谱复制至 `release/data/songs/recorder/`：
-   - `one_last_kiss.json`
+2. 将 `BetterPetitPlanet/Assets/Models/Ocr/` 下的识别模型 `ch_PP-OCRv3_rec_infer.onnx` 和检测模型 `ch_PP-OCRv3_det_infer.onnx` 复制至 `release/Assets/Models/Ocr/`（项目资源配置同时用于构建和发布）。
+3. 清理 `release/data/songs/` 下的多余文件，仅将以下三首默认测试曲谱复制至 `release/data/songs/recorder/`：
    - `dao_xiang.json`
+   - `one_last_kiss.json`
+   - `see_you_again.json`
 
 若需使用命令行仅编译核心程序（不含外部曲谱拷贝），也可直接运行：
 
@@ -56,12 +57,14 @@ release/
 ├── Assets/
 │   ├── Instruments/Recorder/              # 竖笛图标与按键识别模板
 │   └── Models/Ocr/
-│       └── ch_PP-OCRv3_rec_infer.onnx     # OCR 识别模型（约 10MB）
+│       ├── ch_PP-OCRv3_rec_infer.onnx     # OCR 识别模型（约 10MB）
+│       └── ch_PP-OCRv3_det_infer.onnx     # 物品名辅助检测模型（约 2.3MB）
 └── data/
     └── songs/
         └── recorder/
-            ├── one_last_kiss.json         # 默认测试曲谱 1
-            └── dao_xiang.json             # 默认测试曲谱 2
+            ├── dao_xiang.json             # 默认测试曲谱 1
+            ├── one_last_kiss.json         # 默认测试曲谱 2
+            └── see_you_again.json         # 默认测试曲谱 3
 ```
 
 ---
@@ -71,8 +74,10 @@ release/
 发布新版本到 GitHub Releases 时，附件（Assets）应包含以下两部分，兼顾普通用户与源码开发者：
 
 1. **一体化压缩包**（如 `BetterPetitPlanet-win-x64.zip`）：
-   - 将上述 `release/` 目录打包为 `.zip`，内部已包含可执行程序、OCR 模型以及两首默认曲谱，用户下载解压即可直接运行。
+   - 将上述 `release/` 目录打包为 `.zip`，内部已包含可执行程序、双 OCR 模型以及三首默认曲谱，用户下载解压即可直接运行。
 2. **独立资源文件**：
    - `ch_PP-OCRv3_rec_infer.onnx`（放入 `BetterPetitPlanet/Assets/Models/Ocr/`）
-   - `one_last_kiss.json`（放入 `data/songs/recorder/`）
+   - `ch_PP-OCRv3_det_infer.onnx`（放入 `BetterPetitPlanet/Assets/Models/Ocr/`）
    - `dao_xiang.json`（放入 `data/songs/recorder/`）
+   - `one_last_kiss.json`（放入 `data/songs/recorder/`）
+   - `see_you_again.json`（放入 `data/songs/recorder/`）
