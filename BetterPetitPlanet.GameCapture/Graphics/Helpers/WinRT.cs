@@ -58,7 +58,7 @@ internal static class WinrtModule
             {
                 var instancePtr = GetActivationFactory(MarshalString.GetAbi(m));
 
-                factory = ObjectReference<IActivationFactoryVftbl>.Attach(ref instancePtr);
+                factory = ObjectReference<IActivationFactoryVftbl>.Attach(ref instancePtr, typeof(IActivationFactoryVftbl).GUID);
                 Cache.Add(runtimeClassId, factory);
 
                 return factory;

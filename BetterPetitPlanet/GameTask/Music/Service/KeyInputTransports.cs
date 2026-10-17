@@ -6,15 +6,18 @@ using Vanara.PInvoke;
 
 namespace BetterPetitPlanet.GameTask.Music.Service;
 
-public sealed class KeyInputTransports
+public sealed partial class KeyInputTransports : IMusicInputTransport
 {
     private readonly InstrumentCoordinateService _coordinateService;
     private readonly IConfigService? _configService;
+    private readonly IMusicKeyboardNative _keyboardNative;
 
-    public KeyInputTransports(InstrumentCoordinateService? coordinateService = null, IConfigService? configService = null)
+    public KeyInputTransports(InstrumentCoordinateService? coordinateService = null, IConfigService? configService = null,
+        IMusicKeyboardNative? keyboardNative = null)
     {
         _coordinateService = coordinateService ?? new InstrumentCoordinateService();
         _configService = configService;
+        _keyboardNative = keyboardNative ?? new MusicKeyboardNative();
     }
 
     public void SendKey(string keyName, int holdDurationMs, IntPtr targetHwnd, MusicInputMode inputMode)

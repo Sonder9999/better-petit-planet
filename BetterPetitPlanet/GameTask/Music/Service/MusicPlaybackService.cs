@@ -1,5 +1,4 @@
 using System;
-using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -10,99 +9,106 @@ using Microsoft.Extensions.Logging;
 
 namespace BetterPetitPlanet.GameTask.Music.Service;
 
-public enum PlayerState
-{
-    Idle,
-    Playing,
-    Paused,
-    Stopped
-}
+public enum PlayerState { Idle, Playing, Paused, Stopped }
 
-public sealed class MusicPlaybackService : IDisposable
+public sealed partial class MusicPlaybackService : IDisposable
 {
-    private readonly ILogger<MusicPlaybackService>? _logger;
+    private readonly object _stateLock = new();
+    private readonly MusicSessionLogger? _logger;
     private readonly IConfigService _configService;
     private readonly GameProcessDetector _processDetector;
-    private readonly KeyInputTransports _transports;
-
-    private PerformanceTimeline? _currentTimeline;
-    private CancellationTokenSource? _cts;
+    private readonly MusicSessionClock _clock;
+    private readonly MusicNoteScheduler _scheduler;
+    private readonly MusicNotificationQueue _notifications;
+    private readonly MusicPlaybackOptions _options;
+    private readonly MusicGameTarget? _gameTarget;
+    private readonly CancellationTokenSource _lifetime = new();
     private Task? _playbackTask;
-    private readonly object _stateLock = new();
+    private PerformanceTimeline? _currentTimeline;
+    private PlayerState _state;
+    private bool _automatic = true;
+    private bool _ready = true;
+    private bool _mouseCompatible = true;
+    private bool _positionSelected;
+    private bool _disposed;
+    private int _preparationMs = 3000;
+    private long _revision;
+    private IntPtr _target;
+    private string _sessionId = Guid.NewGuid().ToString("N");
 
-    private PlayerState _state = PlayerState.Idle;
-    private double _playbackSpeed = 1.0;
-    private int _currentEventIndex;
-    private double _pausedElapsedMs;
-    private double _initialStartMs;
-    private volatile bool _seekOccurred;
-    private long _startTimestamp;
-
-    public PlayerState State => _state;
-    public PerformanceTimeline? CurrentTimeline => _currentTimeline;
-    public double PlaybackSpeed => _playbackSpeed;
-
+    public PlayerState State { get { lock (_stateLock) return _state; } }
+    public PerformanceTimeline? CurrentTimeline { get { lock (_stateLock) return _currentTimeline; } }
+    public double PlaybackSpeed { get { lock (_stateLock) return _clock.Speed; } }
+    public double CurrentPositionMs { get { lock (_stateLock) return _clock.PositionMs; } }
+    public string SessionId { get { lock (_stateLock) return _sessionId; } }
+    public bool AutomaticPlaybackEnabled { get { lock (_stateLock) return _automatic; } }
+    public bool IsReady { get { lock (_stateLock) return _ready; } }
+    public string ReadinessReason { get; private set; } = "就绪";
+    public string? LastInputError { get; private set; }
     public event Action<PlayerState>? StateChanged;
     public event Action<double, double>? PositionChanged;
     public event Action<int, int, double, double>? NotePositionChanged;
     public event Action<PerformanceEvent, int, int>? NotePlayed;
     public event Action? PlaybackCompleted;
-
     public event Action? NextTrackRequested;
     public event Action? PreviousTrackRequested;
+    public event Action<MusicSessionSnapshot>? SessionChanged;
+    public event Action<MusicInputEvent>? InputChanged;
+    public event Action<string>? PlaybackError;
 
-    private readonly InstrumentDetector? _instrumentDetector;
-
-    public MusicPlaybackService(
-        IConfigService configService,
-        GameProcessDetector processDetector,
-        KeyInputTransports transports,
-        InstrumentDetector? instrumentDetector = null,
-        ILogger<MusicPlaybackService>? logger = null)
+    public MusicPlaybackService(IConfigService configService, GameProcessDetector processDetector,
+        KeyInputTransports transports, InstrumentDetector? instrumentDetector = null,
+        ILogger<MusicPlaybackService>? logger = null, MusicSessionClock? clock = null,
+        IMusicInputTransport? inputTransport = null, MusicPlaybackOptions? options = null)
     {
         _configService = configService;
         _processDetector = processDetector;
-        _transports = transports;
-        _instrumentDetector = instrumentDetector;
-        _logger = logger;
-        _playbackSpeed = _configService.Config.Music.PlaybackSpeed;
+        _options = options ?? new MusicPlaybackOptions();
+        _options.Validate();
+        _logger = logger == null ? null : new MusicSessionLogger(logger, _options.NotificationCapacity);
+        _clock = clock ?? new MusicSessionClock();
+        _clock.SetSpeed(double.IsFinite(configService.Config.Music.PlaybackSpeed)
+            ? Math.Clamp(configService.Config.Music.PlaybackSpeed, 0.2, 5) : 1);
+        _notifications = new MusicNotificationQueue(ex => _logger?.LogError(ex, "Music notification handler failed"),
+            _options.NotificationCapacity, OnInputNotificationOverflow);
+        _scheduler = new MusicNoteScheduler(inputTransport ?? transports, _options, () => _clock.HostMonotonicMs);
+        _scheduler.Submitted += OnSubmitted;
+        _scheduler.Failed += ReportError;
+        _scheduler.ReleaseExhausted += key => _logger?.LogError(
+            new EventId(MusicSessionLogger.ReleaseEventBase + (int)Enum.Parse<MusicLane>(key)),
+            "Music release retries exhausted after {Attempts} attempts; session {SessionId}; key {Key}",
+            _options.ReleaseRetryAttempts, _sessionId, key);
+        // A supplied transport owns its environment guard; production uses cached window identity.
+        if (inputTransport == null) _gameTarget = new MusicGameTarget(processDetector);
     }
 
     public void RequestNextTrack() => NextTrackRequested?.Invoke();
     public void RequestPreviousTrack() => PreviousTrackRequested?.Invoke();
 
+    public void ConfigurePreparation(int preparationMs)
+    {
+        if (preparationMs < 0 || preparationMs > 10000) throw new ArgumentOutOfRangeException(nameof(preparationMs));
+        lock (_stateLock) _preparationMs = preparationMs;
+    }
+
     public void LoadTimeline(PerformanceTimeline timeline)
     {
-        Stop();
+        var normalized = ScoreNormalizer.CopyTimeline(timeline);
         lock (_stateLock)
         {
-            if (timeline.Events.Count > 0 && timeline.Events[0].TimeMs > 0)
-            {
-                int leadIn = timeline.Events[0].TimeMs;
-                foreach (var ev in timeline.Events)
-                {
-                    ev.TimeMs -= leadIn;
-                }
-                foreach (var sec in timeline.Sections)
-                {
-                    sec.TimeMs = Math.Max(0, sec.TimeMs - leadIn);
-                }
-                timeline.TotalDurationMs = timeline.Events.Max(e => e.TimeMs + e.DurationMs);
-            }
-
-            if (timeline.Sections.Count == 0 && timeline.Events.Count > 0)
-            {
-                timeline.Sections = PetitScoreParser.ExtractSections(timeline.Events, timeline.TotalDurationMs);
-            }
-
-            _currentTimeline = timeline;
-            _currentEventIndex = 0;
-            _pausedElapsedMs = 0;
-            _initialStartMs = 0;
-            _seekOccurred = false;
+            StopCore(restartExhausted: false);
+            if (_scheduler.ActiveKeys.Length > 0) { ReportError("按键释放失败，请稍后重试加载曲谱。"); return; }
+            _currentTimeline = normalized;
+            _mouseCompatible = !normalized.Events.Any(n => n.Kind == MusicNoteKind.Hold) &&
+                normalized.Events.GroupBy(n => n.TimeMs).All(group => group.Count() == 1);
+            _scheduler.Load(normalized.Events);
+            _sessionId = Guid.NewGuid().ToString("N");
+            _revision++;
+            _clock.Seek(0);
+            _positionSelected = false;
             SetState(PlayerState.Idle);
-            NotifyPosition(0, timeline.Events.Count, 0, timeline.TotalDurationMs / 1000.0);
-            _logger?.LogInformation("Loaded score: {Title} ({Events} notes)", timeline.Metadata.Title, timeline.Events.Count);
+            Publish();
+            _logger?.LogInformation("Loaded score {Title} with {Count} notes", normalized.Metadata.Title, normalized.Events.Count);
         }
     }
 
@@ -110,44 +116,29 @@ public sealed class MusicPlaybackService : IDisposable
     {
         lock (_stateLock)
         {
-            if (_currentTimeline == null || _currentTimeline.Events.Count == 0) return;
-            if (_state == PlayerState.Playing) return;
-
-            if (_configService.Config.Music.AutoFocusGameOnPlayback)
-            {
+            if (_disposed || !_ready || _state == PlayerState.Playing || _currentTimeline?.Events.Count is not > 0) return;
+            if (_automatic && !CanAutomaticallyPlay()) return;
+            if (_configService.Config.Music.AutoFocusGameOnPlayback && _gameTarget != null)
                 _processDetector.ActivateGameWindow();
-            }
-
-            if (_state == PlayerState.Paused)
+            if (_state != PlayerState.Paused && !_positionSelected)
             {
-                _startTimestamp = Stopwatch.GetTimestamp() - (long)(_pausedElapsedMs * Stopwatch.Frequency / 1000.0);
-                SetState(PlayerState.Playing);
-                _logger?.LogInformation("Playback resumed at {Ms} ms", _pausedElapsedMs);
-                return;
+                _clock.Seek(-_preparationMs);
+                _scheduler.Seek(-_preparationMs, _target, _configService.Config.Music.InputMode);
             }
-
-            _cts = new CancellationTokenSource();
-            _seekOccurred = false;
-
-            if (_initialStartMs > 0 || _currentEventIndex > 0)
-            {
-                double startMs = _currentTimeline.Events[_currentEventIndex].TimeMs;
-                _pausedElapsedMs = startMs / _playbackSpeed;
-                _startTimestamp = Stopwatch.GetTimestamp() - (long)(_pausedElapsedMs * Stopwatch.Frequency / 1000.0);
-                _initialStartMs = 0;
-            }
-            else
-            {
-                _currentEventIndex = 0;
-                _pausedElapsedMs = 0;
-                _startTimestamp = Stopwatch.GetTimestamp();
-            }
-
+            _positionSelected = false;
+            _clock.Start();
             SetState(PlayerState.Playing);
-
-            _playbackTask = Task.Run(() => PlaybackLoop(_cts.Token));
-            _logger?.LogInformation("Playback started for {Title}", _currentTimeline.Metadata.Title);
+            Tick();
+            EnsureWorker();
+            Publish();
         }
+    }
+
+    public void StartFollowAlong(int preparationMs = 3000)
+    {
+        ConfigurePreparation(preparationMs);
+        SetAutomaticPlayback(false);
+        Play();
     }
 
     public void Pause()
@@ -155,241 +146,85 @@ public sealed class MusicPlaybackService : IDisposable
         lock (_stateLock)
         {
             if (_state != PlayerState.Playing) return;
-            long now = Stopwatch.GetTimestamp();
-            _pausedElapsedMs = (double)(now - _startTimestamp) * 1000 / Stopwatch.Frequency;
+            _clock.Pause();
+            _scheduler.ReleaseAll(_target, _configService.Config.Music.InputMode);
             SetState(PlayerState.Paused);
-            _logger?.LogInformation("Playback paused at {Ms} ms", _pausedElapsedMs);
+            _revision++;
+            Publish();
         }
     }
 
-    public void Stop()
+    public void Stop() => StopCore(restartExhausted: true);
+
+    private void StopCore(bool restartExhausted)
     {
         lock (_stateLock)
         {
-            if (_state == PlayerState.Stopped || _state == PlayerState.Idle) return;
-            _cts?.Cancel();
-            _currentEventIndex = 0;
-            _pausedElapsedMs = 0;
-            _initialStartMs = 0;
-            _seekOccurred = false;
+            _clock.Pause();
+            _scheduler.Seek(0, _target, _configService.Config.Music.InputMode, restartExhausted);
+            _clock.Seek(0);
+            _positionSelected = false;
+            _revision++;
             SetState(PlayerState.Stopped);
-            _logger?.LogInformation("Playback stopped");
+            Publish();
+            if (_scheduler.HasPendingReleases) EnsureWorker();
         }
     }
 
-    public void SeekNote(int noteIndex)
+    public void TogglePlayPause() { if (State == PlayerState.Playing) Pause(); else Play(); }
+
+    public void SetAutomaticPlayback(bool enabled)
     {
         lock (_stateLock)
         {
-            if (_currentTimeline == null || _currentTimeline.Events.Count == 0) return;
-
-            int clampedIndex = Math.Clamp(noteIndex, 0, _currentTimeline.Events.Count - 1);
-            _currentEventIndex = clampedIndex;
-            var targetEvent = _currentTimeline.Events[clampedIndex];
-            double targetMs = targetEvent.TimeMs;
-
-            if (_state == PlayerState.Playing)
-            {
-                _startTimestamp = Stopwatch.GetTimestamp() - (long)(targetMs / _playbackSpeed * Stopwatch.Frequency / 1000.0);
-                _seekOccurred = true;
-            }
-            else if (_state == PlayerState.Paused)
-            {
-                _pausedElapsedMs = targetMs / _playbackSpeed;
-            }
-            else
-            {
-                _initialStartMs = targetMs;
-            }
-
-            NotifyPosition(clampedIndex, _currentTimeline.Events.Count, targetMs / 1000.0, _currentTimeline.TotalDurationMs / 1000.0);
-            _logger?.LogInformation("Playback seeked to note #{Idx}/{Total} (Time {Sec:F2}s)", clampedIndex, _currentTimeline.Events.Count, targetMs / 1000.0);
+            if (_automatic == enabled) return;
+            if (enabled && !CanAutomaticallyPlay()) return;
+            _scheduler.ReleaseAll(_target, _configService.Config.Music.InputMode);
+            // An off/on transition never catches up notes already passed while manual.
+            if (enabled && _clock.IsRunning) _scheduler.SkipThrough(_clock.PositionMs);
+            _automatic = enabled;
+            Publish();
         }
     }
 
-    public void Seek(double targetSeconds)
+    public void SetReadiness(bool ready, string reason)
     {
         lock (_stateLock)
         {
-            if (_currentTimeline == null || _currentTimeline.Events.Count == 0) return;
-
-            double targetMs = Math.Clamp(targetSeconds * 1000.0, 0, _currentTimeline.TotalDurationMs);
-            var events = _currentTimeline.Events;
-
-            int newIndex = 0;
-            while (newIndex < events.Count && events[newIndex].TimeMs < targetMs)
+            if (_ready == ready && ReadinessReason == reason) return;
+            _ready = ready;
+            ReadinessReason = reason;
+            if (!ready)
             {
-                newIndex++;
+                if (_state == PlayerState.Playing) Pause();
+                else _scheduler.ReleaseAll(_target, _configService.Config.Music.InputMode);
             }
-            SeekNote(newIndex);
+            Publish();
         }
-    }
-
-    public void TogglePlayPause()
-    {
-        if (_state == PlayerState.Playing) Pause();
-        else Play();
     }
 
     public void SetSpeed(double speed)
     {
-        _playbackSpeed = Math.Clamp(speed, 0.2, 5.0);
-        _configService.Config.Music.PlaybackSpeed = _playbackSpeed;
-        _configService.Save();
-    }
-
-    private void SetState(PlayerState newState)
-    {
-        _state = newState;
-        StateChanged?.Invoke(newState);
-    }
-
-    private void NotifyPosition(int currentNote, int totalNotes, double currentSec, double totalSec)
-    {
-        PositionChanged?.Invoke(currentSec, totalSec);
-        NotePositionChanged?.Invoke(currentNote, totalNotes, currentSec, totalSec);
-    }
-
-    private async Task PlaybackLoop(CancellationToken token)
-    {
-        var timeline = _currentTimeline;
-        if (timeline == null) return;
-
-        var events = timeline.Events;
-        int totalEvents = events.Count;
-
-        long lastInstrumentCheckTs = Stopwatch.GetTimestamp();
-        long lastPositionNotifyTs = Stopwatch.GetTimestamp();
-
-        while (!token.IsCancellationRequested && _currentEventIndex < totalEvents)
+        if (!double.IsFinite(speed)) throw new ArgumentOutOfRangeException(nameof(speed));
+        lock (_stateLock)
         {
-            while (_state == PlayerState.Paused && !token.IsCancellationRequested)
-            {
-                await Task.Delay(20, token);
-            }
-            if (token.IsCancellationRequested || _state != PlayerState.Playing) break;
-
-            var hwnd = _processDetector.FindMainWindowHandle();
-
-            // 1. 严格前台焦点硬守护：当且仅当前台窗口是游戏窗口时才演奏，失焦时安全挂起等待
-            if (_configService.Config.Music.InputMode == MusicInputMode.Keyboard && !_processDetector.IsGameForeground())
-            {
-                _logger?.LogInformation("游戏失去前台焦点，演奏已自动挂起等待...");
-                while (!token.IsCancellationRequested && _state == PlayerState.Playing && !_processDetector.IsGameForeground())
-                {
-                    if (_seekOccurred)
-                    {
-                        break;
-                    }
-                    await Task.Delay(50, token);
-                }
-                if (token.IsCancellationRequested || _state != PlayerState.Playing) break;
-
-                // 重新聚焦后，重新同步 _startTimestamp，使音符不发生抢弹或错乱
-                if (_currentEventIndex < totalEvents)
-                {
-                    double curTargetMs = events[_currentEventIndex].TimeMs / _playbackSpeed;
-                    _startTimestamp = Stopwatch.GetTimestamp() - (long)(curTargetMs * Stopwatch.Frequency / 1000.0);
-                    _logger?.LogInformation("游戏重新获得前台焦点，继续演奏音符 #{Idx}。", _currentEventIndex);
-                }
-            }
-
-            // 2. 周期性检查游戏内乐器演奏界面（每 1200ms 检测一次）
-            long nowTs = Stopwatch.GetTimestamp();
-            if ((nowTs - lastInstrumentCheckTs) * 1000.0 / Stopwatch.Frequency >= 1200)
-            {
-                lastInstrumentCheckTs = nowTs;
-                if (_instrumentDetector != null && _instrumentDetector.IsTemplateLoaded && hwnd != IntPtr.Zero)
-                {
-                    if (!_instrumentDetector.CheckGameWindow(hwnd, out _))
-                    {
-                        _logger?.LogInformation("检测到游戏内竖笛界面已关闭，自动暂停演奏。");
-                        Pause();
-                        continue;
-                    }
-                }
-            }
-
-            var nextEvent = events[_currentEventIndex];
-            double targetTimeMs = nextEvent.TimeMs / _playbackSpeed;
-
-            bool wasSeeked = false;
-            // High precision wait
-            while (!token.IsCancellationRequested && _state == PlayerState.Playing)
-            {
-                if (_seekOccurred)
-                {
-                    _seekOccurred = false;
-                    wasSeeked = true;
-                    break;
-                }
-
-                // 等待期间失焦保护：跳出循环并进入外层挂起等待
-                if (_configService.Config.Music.InputMode == MusicInputMode.Keyboard && !_processDetector.IsGameForeground())
-                {
-                    break;
-                }
-
-                long now = Stopwatch.GetTimestamp();
-                double elapsedMs = (double)(now - _startTimestamp) * 1000 / Stopwatch.Frequency;
-                double remainMs = targetTimeMs - elapsedMs;
-
-                // 节流分发进度变更通知（约每 40ms 一次，25fps）
-                if ((now - lastPositionNotifyTs) * 1000.0 / Stopwatch.Frequency >= 40)
-                {
-                    lastPositionNotifyTs = now;
-                    NotifyPosition(_currentEventIndex, totalEvents, elapsedMs / 1000.0, timeline.TotalDurationMs / 1000.0);
-                }
-
-                if (remainMs <= 1.0) break;
-                if (remainMs > 15.0)
-                {
-                    int delayMs = Math.Min((int)remainMs - 10, 30);
-                    await Task.Delay(delayMs, token);
-                }
-                else
-                {
-                    Thread.SpinWait(100);
-                }
-            }
-
-            if (wasSeeked)
-            {
-                continue;
-            }
-
-            if (token.IsCancellationRequested || _state != PlayerState.Playing) break;
-
-            // 如果当前失焦，不发键并重新循环等待
-            if (_configService.Config.Music.InputMode == MusicInputMode.Keyboard && !_processDetector.IsGameForeground())
-            {
-                continue;
-            }
-
-            // 发射按键
-            _transports.SendKey(nextEvent.Key, nextEvent.DurationMs, hwnd, _configService.Config.Music.InputMode);
-            NotePlayed?.Invoke(nextEvent, _currentEventIndex + 1, totalEvents);
-
-            _currentEventIndex++;
-            NotifyPosition(_currentEventIndex, totalEvents, targetTimeMs / 1000.0, timeline.TotalDurationMs / 1000.0);
+            _clock.SetSpeed(Math.Clamp(speed, 0.2, 5));
+            _configService.Config.Music.PlaybackSpeed = _clock.Speed;
+            Publish();
         }
-
-        if (!token.IsCancellationRequested && _currentEventIndex >= totalEvents)
-        {
-            _logger?.LogInformation("Song finished: {Title}", timeline.Metadata.Title);
-            _initialStartMs = 0;
-            _currentEventIndex = 0;
-            _pausedElapsedMs = 0;
-            _seekOccurred = false;
-            SetState(PlayerState.Idle);
-            NotifyPosition(0, totalEvents, 0, timeline.TotalDurationMs / 1000.0);
-            PlaybackCompleted?.Invoke();
-        }
+        _notifications.Post(_configService.Save);
     }
 
     public void Dispose()
     {
-        Stop();
-        _cts?.Dispose();
+        lock (_stateLock)
+        {
+            if (_disposed) return;
+            StopCore(restartExhausted: false);
+            _disposed = true;
+            _lifetime.Cancel();
+            // Failed releases are retained and retried by the worker's finalizer.
+            if (_playbackTask == null) { _notifications.Dispose(); _logger?.Dispose(); _lifetime.Dispose(); }
+        }
     }
 }

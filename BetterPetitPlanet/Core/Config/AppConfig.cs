@@ -4,6 +4,7 @@ namespace BetterPetitPlanet.Core.Config;
 
 public sealed class AppConfig
 {
+    public MusicOverlayConfig MusicOverlay { get; set; } = new();
     public GeneralConfig General { get; set; } = new();
     public AutoPickConfig AutoPick { get; set; } = new();
     public MusicConfig Music { get; set; } = new();
@@ -60,6 +61,9 @@ public enum MusicPlaybackMode
 
 public sealed class MusicConfig
 {
+    public MusicPlaybackTimingConfig PlaybackTiming { get; set; } = new();
+    public bool AutomaticPlaybackEnabled { get; set; } = true;
+    public int PreparationMs { get; set; } = 3000;
     public string SongsDirectory { get; set; } = string.Empty;
     public string SelectedInstrument { get; set; } = "竖笛";
     public string SelectedFormat { get; set; } = "全部格式";
@@ -77,6 +81,8 @@ public sealed class MusicConfig
 
 public sealed class HotkeyConfig
 {
+    public string ToggleMusicTimelineHotkey { get; set; } = "Ctrl+F9";
+    public string ToggleMusicOverlayHotkey { get; set; } = "Ctrl+F12";
     public string ToggleAutoPickHotkey { get; set; } = "F8";
     public string ToggleMusicHotkey { get; set; } = "F9";
     public string PreviousSongHotkey { get; set; } = "F10";

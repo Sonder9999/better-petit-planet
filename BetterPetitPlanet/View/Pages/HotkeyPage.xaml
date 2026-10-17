@@ -4,120 +4,104 @@
       xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
       xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
       xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+      xmlns:controls="clr-namespace:BetterPetitPlanet.View.Controls"
       xmlns:viewModel="clr-namespace:BetterPetitPlanet.ViewModel.Pages"
       Title="HotkeyPage"
       d:DataContext="{d:DesignInstance Type=viewModel:HotkeyPageViewModel}"
       mc:Ignorable="d">
-    <StackPanel Margin="{StaticResource PagePadding}">
-        <TextBlock Margin="0,0,0,4"
-                   FontSize="18"
-                   FontWeight="SemiBold"
-                   Foreground="{DynamicResource TextFillColorPrimaryBrush}"
-                   Text="快捷键设置" />
-        <TextBlock Margin="0,0,0,16"
-                   FontSize="12"
-                   Foreground="{DynamicResource TextFillColorTertiaryBrush}"
-                   Text="全局热键：只支持功能键与快捷键组合，软件启动后全局生效。按下设定热键可直接触发对应功能开关。"
-                   TextWrapping="Wrap" />
+    <ScrollViewer HorizontalScrollBarVisibility="Disabled"
+                  VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="{StaticResource PagePadding}">
+            <TextBlock Margin="0,0,0,4"
+                       FontSize="18"
+                       FontWeight="SemiBold"
+                       Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+                       Text="快捷键设置" />
+            <TextBlock Margin="0,0,0,16"
+                       FontSize="12"
+                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                       Text="全局热键：支持单功能键 (F1–F12) 或与 Ctrl、Alt、Shift、Win 的修饰组合。修改后点击“应用快捷键”以原子事务注册到系统。"
+                       TextWrapping="Wrap" />
 
-        <ui:CardControl Margin="0,0,0,12"
-                        Icon="{ui:SymbolIcon Flash24}">
-            <ui:CardControl.Header>
-                <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                    </Grid.RowDefinitions>
-                    <TextBlock Grid.Row="0"
-                               FontSize="14"
-                               FontWeight="Medium"
-                               Text="自动拾取总开关快捷键" />
-                    <TextBlock Grid.Row="1"
-                               Margin="0,3,0,0"
-                               FontSize="12"
-                               Foreground="{DynamicResource TextFillColorTertiaryBrush}"
-                               Text="按下该全局快捷键可随时启用或暂停自动拾取功能，默认 F8" />
-                </Grid>
-            </ui:CardControl.Header>
-            <ui:TextBox Width="120"
-                        Margin="0,0,12,0"
-                        Text="{Binding ToggleAutoPickHotkey, Mode=TwoWay}"
-                        TextAlignment="Center" />
-        </ui:CardControl>
+            <!-- 1. 自动拾取总开关 (F8) -->
+            <controls:HotkeySettingRow Symbol="Flash24"
+                                       Title="自动拾取总开关"
+                                       Subtitle="按下快捷键随时开启或暂停物品自动拾取功能，默认 F8"
+                                       Hotkey="{Binding ToggleAutoPickHotkey, Mode=TwoWay}" />
 
-        <ui:CardControl Margin="0,0,0,12"
-                        Icon="{ui:SymbolIcon MusicNote224}">
-            <ui:CardControl.Header>
-                <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                    </Grid.RowDefinitions>
-                    <TextBlock Grid.Row="0"
-                               FontSize="14"
-                               FontWeight="Medium"
-                               Text="自动演奏启停快捷键" />
-                    <TextBlock Grid.Row="1"
-                               Margin="0,3,0,0"
-                               FontSize="12"
-                               Foreground="{DynamicResource TextFillColorTertiaryBrush}"
-                               Text="按下该全局快捷键可随时开始或暂停自动演奏乐曲，默认 F9" />
-                </Grid>
-            </ui:CardControl.Header>
-            <ui:TextBox Width="120"
-                        Margin="0,0,12,0"
-                        Text="{Binding ToggleMusicHotkey, Mode=TwoWay}"
-                        TextAlignment="Center" />
-        </ui:CardControl>
+            <!-- 2. 自动演奏启动/暂停 (F9) -->
+            <controls:HotkeySettingRow Symbol="Play24"
+                                       Title="自动演奏启动/暂停"
+                                       Subtitle="启动或暂停全自动按键模拟演奏，默认 F9"
+                                       Hotkey="{Binding ToggleMusicHotkey, Mode=TwoWay}" />
 
-        <ui:CardControl Margin="0,0,0,12"
-                        Icon="{ui:SymbolIcon Previous24}">
-            <ui:CardControl.Header>
-                <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                    </Grid.RowDefinitions>
-                    <TextBlock Grid.Row="0"
-                               FontSize="14"
-                               FontWeight="Medium"
-                               Text="上一首曲目快捷键" />
-                    <TextBlock Grid.Row="1"
-                               Margin="0,3,0,0"
-                               FontSize="12"
-                               Foreground="{DynamicResource TextFillColorTertiaryBrush}"
-                               Text="按下该全局快捷键切换到曲库中的上一首乐曲，默认 F10" />
-                </Grid>
-            </ui:CardControl.Header>
-            <ui:TextBox Width="120"
-                        Margin="0,0,12,0"
-                        Text="{Binding PreviousSongHotkey, Mode=TwoWay}"
-                        TextAlignment="Center" />
-        </ui:CardControl>
+            <!-- 3. 上一首乐曲 (F10) -->
+            <controls:HotkeySettingRow Symbol="Previous24"
+                                       Title="上一首曲目"
+                                       Subtitle="切换到曲库中的上一首乐曲，默认 F10"
+                                       Hotkey="{Binding PreviousSongHotkey, Mode=TwoWay}" />
 
-        <ui:CardControl Margin="0,0,0,12"
-                        Icon="{ui:SymbolIcon Next24}">
-            <ui:CardControl.Header>
+            <!-- 4. 下一首乐曲 (F11) -->
+            <controls:HotkeySettingRow Symbol="Next24"
+                                       Title="下一首曲目"
+                                       Subtitle="切换到曲库中的下一首乐曲，默认 F11"
+                                       Hotkey="{Binding NextSongHotkey, Mode=TwoWay}" />
+
+            <!-- 5. 谱面时间轴启动/暂停 (Ctrl+F9) -->
+            <controls:HotkeySettingRow Symbol="Timer24"
+                                       Title="谱面时间轴启动/暂停"
+                                       Subtitle="启动或暂停瀑布流谱面与节拍推进，手动跟弹练习使用，默认 Ctrl+F9"
+                                       Hotkey="{Binding ToggleMusicTimelineHotkey, Mode=TwoWay}" />
+
+            <!-- 6. 悬浮谱面显示开关 (Ctrl+F12) -->
+            <controls:HotkeySettingRow Symbol="Eye24"
+                                       Title="悬浮谱面显示开关"
+                                       Subtitle="仅控制桌面悬浮谱面窗口的显隐，不影响实际演奏与输入状态，默认 Ctrl+F12"
+                                       Hotkey="{Binding ToggleMusicOverlayHotkey, Mode=TwoWay}" />
+
+            <!-- 底部操作与状态卡片 -->
+            <Border Margin="0,4,0,12"
+                    Padding="16"
+                    Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1"
+                    CornerRadius="8">
                 <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                    </Grid.RowDefinitions>
-                    <TextBlock Grid.Row="0"
-                               FontSize="14"
-                               FontWeight="Medium"
-                               Text="下一首曲目快捷键" />
-                    <TextBlock Grid.Row="1"
-                               Margin="0,3,0,0"
-                               FontSize="12"
-                               Foreground="{DynamicResource TextFillColorTertiaryBrush}"
-                               Text="按下该全局快捷键切换到曲库中的下一首乐曲，默认 F11" />
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <!-- 状态与回滚错误信息 -->
+                    <TextBlock VerticalAlignment="Center"
+                               Margin="0,0,16,0"
+                               FontSize="13"
+                               Text="{Binding StatusText}"
+                               TextWrapping="Wrap">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasError}" Value="True">
+                                        <Setter Property="Foreground" Value="{DynamicResource SystemFillColorCriticalBrush}" />
+                                        <Setter Property="FontWeight" Value="SemiBold" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+
+                    <!-- 操作按钮 -->
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                        <ui:Button Margin="0,0,8,0"
+                                   Command="{Binding ResetToDefaultCommand}"
+                                   Content="恢复默认" />
+                        <ui:Button Appearance="Primary"
+                                   Command="{Binding ApplyHotkeysCommand}"
+                                   Content="应用快捷键" />
+                    </StackPanel>
                 </Grid>
-            </ui:CardControl.Header>
-            <ui:TextBox Width="120"
-                        Margin="0,0,12,0"
-                        Text="{Binding NextSongHotkey, Mode=TwoWay}"
-                        TextAlignment="Center" />
-        </ui:CardControl>
-    </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
 </Page>

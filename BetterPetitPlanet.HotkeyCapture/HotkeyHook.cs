@@ -1,14 +1,17 @@
-﻿using System.Runtime.InteropServices;
+using System.Runtime.InteropServices;
+using System.Collections.Generic;
+using System.Linq;
 using Vanara.PInvoke;
 
 namespace BetterPetitPlanet.HotkeyCapture;
 
-public sealed class HotkeyHook : IDisposable
+public sealed class HotkeyHook : IHotkeyHook
 {
     public event EventHandler<KeyPressedEventArgs>? KeyPressed = null;
 
     private readonly Window window = new();
     private int currentId;
+    private readonly Dictionary<(User32.HotKeyModifiers Modifier, Keys Key), int> registeredHotkeys = [];
 
     private class Window : NativeWindow, IDisposable
     {
@@ -48,8 +51,14 @@ public sealed class HotkeyHook : IDisposable
 
     public void RegisterHotKey(User32.HotKeyModifiers modifier, Keys key)
     {
-        currentId += 1;
-        if (!User32.RegisterHotKey(window!.Handle, currentId, modifier, (uint)key))
+        var binding = (modifier, key);
+        if (registeredHotkeys.ContainsKey(binding))
+        {
+            throw new InvalidOperationException("Hotkey is already registered by this hook");
+        }
+
+        var id = currentId + 1;
+        if (!User32.RegisterHotKey(window!.Handle, id, modifier, (uint)key))
         {
             if (Marshal.GetLastWin32Error() == SystemErrorCodes.ERROR_HOTKEY_ALREADY_REGISTERED)
             {
@@ -60,13 +69,29 @@ public sealed class HotkeyHook : IDisposable
                 throw new InvalidOperationException("Hotkey registration failed");
             }
         }
+
+        currentId = id;
+        registeredHotkeys.Add(binding, id);
+    }
+
+    public HotkeyUnregisterResult UnregisterHotKey(User32.HotKeyModifiers modifier, Keys key)
+    {
+        var binding = (modifier, key);
+        if (!registeredHotkeys.TryGetValue(binding, out var id)) return HotkeyUnregisterResult.NotRegistered;
+        if (!User32.UnregisterHotKey(window!.Handle, id)) return HotkeyUnregisterResult.Unknown;
+
+        registeredHotkeys.Remove(binding);
+        return HotkeyUnregisterResult.Unregistered;
     }
 
     public void UnregisterHotKey()
     {
-        for (int i = currentId; i > 0; i--)
+        foreach (var (binding, id) in registeredHotkeys.ToArray())
         {
-            User32.UnregisterHotKey(window!.Handle, i);
+            if (User32.UnregisterHotKey(window!.Handle, id))
+            {
+                registeredHotkeys.Remove(binding);
+            }
         }
     }
 

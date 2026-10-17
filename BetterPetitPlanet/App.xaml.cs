@@ -2,12 +2,16 @@ using System;
 using System.IO;
 using System.Windows;
 using System.Windows.Threading;
+using System.Threading.Tasks;
 using BetterPetitPlanet.Core.Config;
 using BetterPetitPlanet.Core.Process;
 using BetterPetitPlanet.GameTask;
 using BetterPetitPlanet.GameTask.AutoPick;
 using BetterPetitPlanet.GameTask.AutoPick.Ocr;
+using BetterPetitPlanet.GameTask.Music.Overlay;
+using BetterPetitPlanet.GameTask.Music.Rendering;
 using BetterPetitPlanet.GameTask.Music.Service;
+using BetterPetitPlanet.GameTask.Music.Skins;
 using BetterPetitPlanet.View;
 using BetterPetitPlanet.View.Pages;
 using BetterPetitPlanet.ViewModel;
@@ -78,8 +82,29 @@ public partial class App : Application
             services.AddSingleton<InstrumentDetectorTrigger>();
             services.AddSingleton<KeyInputTransports>();
             services.AddSingleton<PetitScoreParser>();
+            services.AddSingleton(sp =>
+            {
+                var timing = sp.GetRequiredService<IConfigService>().Config.Music.PlaybackTiming;
+                return new MusicPlaybackOptions
+                {
+                    SchedulerIntervalMs = timing.SchedulerIntervalMs,
+                    SnapshotIntervalMs = timing.SnapshotIntervalMs,
+                    ReleaseRetryIntervalMs = timing.ReleaseRetryIntervalMs,
+                    ReleaseRetryAttempts = timing.ReleaseRetryAttempts,
+                    NotificationCapacity = timing.NotificationCapacity
+                };
+            });
+            services.AddSingleton(sp =>
+            {
+                var overlay = sp.GetRequiredService<IConfigService>().Config.MusicOverlay;
+                return MusicOverlayConfigMigration.ToReadinessOptions(overlay);
+            });
             services.AddSingleton<MusicPlaybackService>();
             services.AddSingleton<MusicLibraryService>();
+            services.AddSingleton<MusicCaptureObserver>();
+            services.AddSingleton<MusicSessionCoordinator>();
+            services.AddSingleton<MusicSkinRepository>();
+            services.AddSingleton<MusicOverlayPresenter>();
 
             // Hotkey service
             services.AddSingleton<HotkeyService>();
@@ -106,6 +131,8 @@ public partial class App : Application
 
             services.AddSingleton<SettingsPage>();
             services.AddSingleton<SettingsPageViewModel>();
+
+            services.AddTransient<BetterPetitPlanet.ViewModel.Windows.MusicOverlaySettingsViewModel>();
         })
         .Build();
 
@@ -117,56 +144,97 @@ public partial class App : Application
     protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        MusicOverlayDiagnostics.Start(System.Windows.Media.RenderCapability.Tier >> 16);
 
         DispatcherUnhandledException += OnDispatcherUnhandledException;
         AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
+        TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
 
-        await _host.StartAsync();
-
-        bool isAdmin = IsAdministrator();
-        if (isAdmin)
+        try
         {
-            Log.Information("程序已以管理员权限运行 (UIPI 保护已正常绕过)");
+            Log.Information("应用程序正在启动...");
+
+            await _host.StartAsync();
+            await _host.Services.GetRequiredService<IConfigService>().InitializeAsync();
+
+            bool isAdmin = IsAdministrator();
+            if (isAdmin)
+            {
+                Log.Information("程序已以管理员权限运行 (UIPI 保护已正常绕过)");
+            }
+            else
+            {
+                Log.Warning("程序当前未以管理员权限运行。如果游戏星布谷地以管理员权限启动，Windows UIPI 将拦截所有的键鼠模拟输入！");
+            }
+
+            var detector = _host.Services.GetRequiredService<GameProcessDetector>();
+            HardwareInputSimulator.ForegroundGuard = detector.IsGameForegroundCached;
+
+            // Register Triggers into dispatcher
+            var dispatcher = _host.Services.GetRequiredService<TaskTriggerDispatcher>();
+            var autoPickTrigger = _host.Services.GetRequiredService<AutoPickTrigger>();
+            dispatcher.RegisterTrigger(autoPickTrigger);
+
+            var instrumentTrigger = _host.Services.GetRequiredService<InstrumentDetectorTrigger>();
+            dispatcher.RegisterTrigger(instrumentTrigger);
+
+            var captureObserver = _host.Services.GetRequiredService<MusicCaptureObserver>();
+            dispatcher.RegisterTrigger(captureObserver);
+
+            var coordinator = _host.Services.GetRequiredService<MusicSessionCoordinator>();
+            coordinator.Start();
+
+            var overlayPresenter = _host.Services.GetRequiredService<MusicOverlayPresenter>();
+            overlayPresenter.Start();
+
+            // Pre-resolve ViewModels that listen to background trigger/hotkey events
+            _host.Services.GetRequiredService<TriggerSettingsPageViewModel>();
+
+            // Initialize Global Hotkeys
+            var hotkeyService = _host.Services.GetRequiredService<HotkeyService>();
+            hotkeyService.Initialize();
+
+            // If AutoPick is enabled, start GameTaskManager
+            if (autoPickTrigger.IsEnabled)
+            {
+                var taskManager = _host.Services.GetRequiredService<GameTaskManager>();
+                taskManager.Start();
+            }
+
+            var mainWindow = _host.Services.GetRequiredService<MainWindow>();
+            mainWindow.Show();
+            mainWindow.Navigate(typeof(HomePage));
+            Log.Information("主窗口已呈现，应用程序就绪");
         }
-        else
+        catch (Exception ex)
         {
-            Log.Warning("程序当前未以管理员权限运行。如果游戏星布谷地以管理员权限启动，Windows UIPI 将拦截所有的键鼠模拟输入！");
+            Log.Fatal(ex, "应用程序在启动阶段遇到致命异常并中止");
+            try
+            {
+                MessageBox.Show(
+                    $"应用程序启动失败: {ex.Message}\n\n详细日志请查看: data/logs/better_petit_planet.log",
+                    "BetterPetitPlanet 启动错误",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+            }
+            catch
+            {
+                // UI failed to show message box
+            }
+            Shutdown(-1);
         }
-
-        var detector = _host.Services.GetRequiredService<GameProcessDetector>();
-        HardwareInputSimulator.ForegroundGuard = () => detector.IsGameForeground();
-
-        // Register Triggers into dispatcher
-        var dispatcher = _host.Services.GetRequiredService<TaskTriggerDispatcher>();
-        var autoPickTrigger = _host.Services.GetRequiredService<AutoPickTrigger>();
-        dispatcher.RegisterTrigger(autoPickTrigger);
-
-        var instrumentTrigger = _host.Services.GetRequiredService<InstrumentDetectorTrigger>();
-        dispatcher.RegisterTrigger(instrumentTrigger);
-
-        // Pre-resolve ViewModels that listen to background trigger/hotkey events
-        _host.Services.GetRequiredService<TriggerSettingsPageViewModel>();
-
-        // Initialize Global Hotkeys
-        var hotkeyService = _host.Services.GetRequiredService<HotkeyService>();
-        hotkeyService.Initialize();
-
-        // If AutoPick is enabled, start GameTaskManager
-        if (autoPickTrigger.IsEnabled)
-        {
-            var taskManager = _host.Services.GetRequiredService<GameTaskManager>();
-            taskManager.Start();
-        }
-
-        var mainWindow = _host.Services.GetRequiredService<MainWindow>();
-        mainWindow.Show();
-        mainWindow.Navigate(typeof(HomePage));
     }
 
     protected override async void OnExit(ExitEventArgs e)
     {
         try
         {
+            var overlayPresenter = _host.Services.GetService<MusicOverlayPresenter>();
+            overlayPresenter?.Dispose();
+
+            var coordinator = _host.Services.GetService<MusicSessionCoordinator>();
+            coordinator?.Dispose();
+
             var hotkeyService = _host.Services.GetService<HotkeyService>();
             hotkeyService?.Dispose();
 
@@ -185,6 +253,7 @@ public partial class App : Application
         }
         finally
         {
+            MusicOverlayDiagnostics.Shutdown();
             Log.CloseAndFlush();
             base.OnExit(e);
             Environment.Exit(0);
@@ -203,6 +272,17 @@ public partial class App : Application
         {
             Log.Fatal(ex, "Fatal domain unhandled exception occurred");
         }
+        else
+        {
+            Log.Fatal("Fatal domain unhandled exception occurred: {ExceptionObject}", e.ExceptionObject);
+        }
+        Log.CloseAndFlush();
+    }
+
+    private void OnUnobservedTaskException(object? sender, System.Threading.Tasks.UnobservedTaskExceptionEventArgs e)
+    {
+        Log.Error(e.Exception, "Unobserved task exception occurred");
+        e.SetObserved();
     }
 
     public static bool IsAdministrator()

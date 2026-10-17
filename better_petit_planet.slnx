@@ -8,6 +8,14 @@
     <Platform Project="x64" />
   </Project>
   <Project Path="BetterPetitPlanet.GameCapture/BetterPetitPlanet.GameCapture.csproj" />
+  <Project Path="BetterPetitPlanet.MusicOverlay.Gpu/BetterPetitPlanet.MusicOverlay.Gpu.csproj">
+    <Platform Project="x64" />
+  </Project>
+  <Folder Name="/Tools/">
+    <Project Path="Tools/GpuOverlayPrototype/GpuOverlayPrototype.csproj">
+      <Platform Project="x64" />
+    </Project>
+  </Folder>
   <Project Path="BetterPetitPlanet.HotkeyCapture/BetterPetitPlanet.HotkeyCapture.csproj">
     <Platform Project="x64" />
   </Project>

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.Drawing;
 using System.Threading;
@@ -47,6 +47,18 @@ public sealed class GameTaskManager : IDisposable
         }
 
         var hwnd = _processDetector.FindMainWindowHandle();
+        return Start(hwnd);
+    }
+
+    /// <summary>Starts capture using the latest non-blocking cached game-window snapshot.</summary>
+    public bool StartWithCachedTarget()
+    {
+        if (_isRunning) return true;
+        return Start(_processDetector.FindMainWindowHandleCached());
+    }
+
+    private bool Start(IntPtr hwnd)
+    {
         if (hwnd == IntPtr.Zero)
         {
             _logger?.LogWarning("Target game window not found. Process: {ProcessName}", _processDetector.TargetProcessName);
@@ -110,7 +122,7 @@ public sealed class GameTaskManager : IDisposable
         {
             try
             {
-                if (!_processDetector.IsGameRunning())
+                if (!_processDetector.IsGameRunningCached())
                 {
                     _logger?.LogInformation("Game process terminated. Stopping task manager.");
                     Stop();

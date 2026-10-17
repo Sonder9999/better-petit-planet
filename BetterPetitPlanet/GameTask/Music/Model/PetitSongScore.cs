@@ -41,6 +41,9 @@ public sealed class PetitChordEvent
     [JsonProperty("action")]
     public string Action { get; set; } = "press";
 
+    [JsonProperty("type")]
+    public string? Type { get; set; }
+
     [JsonProperty("duration_ms")]
     public int DurationMs { get; set; } = 45;
 

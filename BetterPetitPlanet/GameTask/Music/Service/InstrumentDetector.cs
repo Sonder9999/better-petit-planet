@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using BetterPetitPlanet.GameTask.Music.Rendering;
 using BetterPetitPlanet.Core.Config;
 using BetterPetitPlanet.GameTask.AutoPick.Ocr;
 using BetterPetitPlanet.GameCapture;
@@ -169,8 +170,10 @@ public sealed class InstrumentDetector : IDisposable
             return result;
         }
 
+        long diagnosticLock = MusicOverlayDiagnostics.Timestamp();
         lock (_syncLock)
         {
+            MusicOverlayDiagnostics.Elapsed(MusicOverlayDiagnostics.Metric.OcrDetectorLockWaitMs, diagnosticLock);
             try
             {
                 // 1. OCR 识别（重点检测 7 个数字 1~7 及 唱名 do~ti，共 14 项原生小目标）
@@ -211,6 +214,7 @@ public sealed class InstrumentDetector : IDisposable
     /// </summary>
     private void DetectOcr(Mat frame, out double confidence, out int hits, out int total)
     {
+        using var diagnostic = MusicOverlayDiagnostics.Measure(MusicOverlayDiagnostics.Metric.OcrRecognitionMs);
         hits = 0;
         total = InstrumentTargets.Numbers.Length;
 
@@ -408,6 +412,7 @@ public sealed class InstrumentDetector : IDisposable
 
     private void UpdateLatestResult(InstrumentDetectionResult result)
     {
+        using var diagnostic = MusicOverlayDiagnostics.Measure(MusicOverlayDiagnostics.Metric.OcrNotifyMs);
         LatestResult = result;
         DetectionUpdated?.Invoke(result);
     }

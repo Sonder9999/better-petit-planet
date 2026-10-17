@@ -21,6 +21,8 @@ public sealed class AutoPickTrigger : ITaskTrigger
     private long _lastPickTimestamp;
     private int _pickCount;
 
+    private volatile bool _musicSuppressed;
+    public bool MusicSuppressed { get => _musicSuppressed; set => _musicSuppressed = value; }
     public string Name => "自动拾取";
     private bool _isEnabled;
     public bool IsEnabled
@@ -57,7 +59,7 @@ public sealed class AutoPickTrigger : ITaskTrigger
 
     public void OnCapture(CaptureContent content)
     {
-        if (!IsEnabled || content.Frame == null || content.Frame.Empty())
+        if (MusicSuppressed || !IsEnabled || content.Frame == null || content.Frame.Empty())
         {
             return;
         }
@@ -65,7 +67,7 @@ public sealed class AutoPickTrigger : ITaskTrigger
         try
         {
             // Foreground check
-            if (!_configService.Config.General.RunInBackground && !_processDetector.IsGameForeground())
+            if (!_configService.Config.General.RunInBackground && !_processDetector.IsGameForegroundCached())
             {
                 return;
             }
@@ -157,6 +159,7 @@ public sealed class AutoPickTrigger : ITaskTrigger
         {
             try
             {
+                if (MusicSuppressed) return;
                 if (_configService.Config.General.RunInBackground && hwnd != IntPtr.Zero)
                 {
                     await HardwareInputSimulator.SendBackgroundKeyPressAsync(hwnd, keyName, holdDurationMs);

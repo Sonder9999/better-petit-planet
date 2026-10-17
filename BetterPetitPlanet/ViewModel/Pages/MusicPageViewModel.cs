@@ -12,6 +12,7 @@ using BetterPetitPlanet.Core.Config;
 using BetterPetitPlanet.Core.Process;
 using BetterPetitPlanet.GameTask;
 using BetterPetitPlanet.GameTask.Music.Model;
+using BetterPetitPlanet.GameTask.Music.Rendering;
 using BetterPetitPlanet.GameTask.Music.Service;
 using Serilog;
 using Wpf.Ui.Controls;
@@ -37,6 +38,7 @@ public partial class MusicPageViewModel : ObservableObject
     private readonly GameProcessDetector? _processDetector;
     private readonly InstrumentDetector? _instrumentDetector;
     private readonly GameTaskManager? _taskManager;
+    private readonly MusicSessionCoordinator? _coordinator;
     private readonly DispatcherTimer? _instrumentCheckTimer;
 
     [ObservableProperty]
@@ -145,7 +147,8 @@ public partial class MusicPageViewModel : ObservableObject
         MusicPlaybackService playbackService,
         GameProcessDetector? processDetector = null,
         InstrumentDetector? instrumentDetector = null,
-        GameTaskManager? taskManager = null)
+        GameTaskManager? taskManager = null,
+        MusicSessionCoordinator? coordinator = null)
     {
         _configService = configService;
         _libraryService = libraryService;
@@ -153,6 +156,7 @@ public partial class MusicPageViewModel : ObservableObject
         _processDetector = processDetector;
         _instrumentDetector = instrumentDetector;
         _taskManager = taskManager;
+        _coordinator = coordinator;
 
         _songsDirectory = _configService.Config.Music.SongsDirectory;
         _selectedInstrument = _configService.Config.Music.SelectedInstrument;
@@ -189,6 +193,18 @@ public partial class MusicPageViewModel : ObservableObject
             _instrumentDetector.DetectionUpdated += OnInstrumentDetectionUpdated;
         }
 
+        if (_coordinator != null)
+        {
+            _coordinator.Changed += () =>
+            {
+                Application.Current?.Dispatcher.Invoke(() =>
+                {
+                    InstrumentStatusText = _coordinator.Status;
+                    InstrumentStatusColor = _coordinator.Ready ? "#107C41" : "#D83B01";
+                });
+            };
+        }
+
         if (_processDetector != null && _instrumentDetector != null)
         {
             _instrumentCheckTimer = new DispatcherTimer
@@ -207,8 +223,12 @@ public partial class MusicPageViewModel : ObservableObject
 
     private void OnInstrumentDetectionUpdated(InstrumentDetectionResult result)
     {
+        long diagnosticPosted = MusicOverlayDiagnostics.Timestamp();
+        using var diagnostic = MusicOverlayDiagnostics.Measure(MusicOverlayDiagnostics.Metric.OcrUiInvokeTotalMs);
         Application.Current?.Dispatcher.Invoke(() =>
         {
+            MusicOverlayDiagnostics.Elapsed(MusicOverlayDiagnostics.Metric.OcrUiInvokeQueueMs, diagnosticPosted);
+            using var execution = MusicOverlayDiagnostics.Measure(MusicOverlayDiagnostics.Metric.OcrUiInvokeExecuteMs);
             _lastContinuousDetectionTime = DateTime.Now;
             InstrumentStatusText = result.StatusSummary;
             InstrumentStatusColor = result.IsDetected ? "#107C41" : "#D83B01";
@@ -218,7 +238,7 @@ public partial class MusicPageViewModel : ObservableObject
     private void CheckInstrumentStatus()
     {
         if (_processDetector == null) return;
-        var hwnd = _processDetector.FindMainWindowHandle();
+        var hwnd = _processDetector.FindMainWindowHandleCached();
         if (hwnd == IntPtr.Zero)
         {
             InstrumentStatusText = "游戏未运行";
@@ -234,9 +254,9 @@ public partial class MusicPageViewModel : ObservableObject
         }
 
         // 若截图器未启动且游戏在运行，自动启动截图器以持续提供实时 OCR 画面流
-        if (_taskManager != null && !_taskManager.IsRunning && _processDetector.IsGameRunning())
+        if (_taskManager != null && !_taskManager.IsRunning && _processDetector.IsGameRunningCached())
         {
-            _taskManager.Start();
+            _taskManager.StartWithCachedTarget();
         }
 
         // 若截图器正在运行，由 InstrumentDetectorTrigger 实时驱动 OCR，无需单次捕获
@@ -291,6 +311,50 @@ public partial class MusicPageViewModel : ObservableObject
             _configService.Config.Music.AutoPauseOnFocusLost = value;
             _configService.Save();
             OnPropertyChanged();
+        }
+    }
+
+    public bool AutomaticPlaybackEnabled
+    {
+        get => _configService.Config.Music.AutomaticPlaybackEnabled;
+        set
+        {
+            if (_configService.Config.Music.AutomaticPlaybackEnabled != value)
+            {
+                _configService.Config.Music.AutomaticPlaybackEnabled = value;
+                if (_coordinator != null)
+                {
+                    _ = _coordinator.PrepareSessionAsync();
+                }
+                else
+                {
+                    _playbackService.SetAutomaticPlayback(value);
+                    _configService.Save();
+                }
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    public int PreparationMs
+    {
+        get => _configService.Config.Music.PreparationMs;
+        set
+        {
+            if (_configService.Config.Music.PreparationMs != value)
+            {
+                _configService.Config.Music.PreparationMs = Math.Clamp(value, 0, 10000);
+                if (_coordinator != null)
+                {
+                    _ = _coordinator.PrepareSessionAsync();
+                }
+                else
+                {
+                    _playbackService.ConfigurePreparation(_configService.Config.Music.PreparationMs);
+                    _configService.Save();
+                }
+                OnPropertyChanged();
+            }
         }
     }
 
@@ -349,9 +413,6 @@ public partial class MusicPageViewModel : ObservableObject
         noteIndex = Math.Clamp(noteIndex, 0, MaximumNoteIndex);
         CurrentNoteIndex = noteIndex;
 
-        _playbackService.SeekNote(noteIndex);
-        _isSeeking = false;
-
         var timeline = _playbackService.CurrentTimeline;
         if (timeline != null && timeline.Events.Count > 0)
         {
@@ -360,8 +421,17 @@ public partial class MusicPageViewModel : ObservableObject
             CurrentPosition = noteTimeMs / 1000.0;
             CurrentTimeText = TimeSpan.FromMilliseconds(noteTimeMs).ToString(@"mm\:ss");
         }
-
         UpdateActiveSection(noteIndex);
+
+        if (_coordinator != null)
+        {
+            _ = _coordinator.SeekNoteAsync(noteIndex);
+            _isSeeking = false;
+            return;
+        }
+
+        _playbackService.SeekNote(noteIndex);
+        _isSeeking = false;
 
         // 2. 真正的音乐播放器体验：点击进度条任意位置直接开始/继续播放
         if (_playbackService.CurrentTimeline != null && _playbackService.State != PlayerState.Playing)
@@ -643,12 +713,42 @@ public partial class MusicPageViewModel : ObservableObject
         UpdateSectionMarkers(timeline);
     }
 
+    private async Task StartTimelineAsync()
+    {
+        try
+        {
+            if (_coordinator != null)
+            {
+                await _coordinator.PrepareSessionAsync();
+                await _coordinator.StartTimelineAsync();
+                InstrumentStatusText = _coordinator.Status;
+            }
+            else
+            {
+                _playbackService.Play();
+            }
+        }
+        catch (Exception ex)
+        {
+            InstrumentStatusText = ex.Message;
+            Log.Warning(ex, "Music page timeline start failed");
+        }
+    }
+
     [RelayCommand]
-    private void PlaySelected(SongItemViewModel? song)
+    private async Task PlaySelected(SongItemViewModel? song)
     {
         var target = song ?? SelectedSong;
         if (target?.Timeline != null)
         {
+            if (_coordinator != null)
+            {
+                _coordinator.LoadTimeline(target.Timeline);
+                SetupSongDisplay(target.Timeline);
+                await StartTimelineAsync();
+                return;
+            }
+
             if (_processDetector != null && _instrumentDetector != null && _instrumentDetector.IsTemplateLoaded)
             {
                 var hwnd = _processDetector.FindMainWindowHandle();
@@ -694,18 +794,26 @@ public partial class MusicPageViewModel : ObservableObject
     {
         if (value?.Timeline != null)
         {
-            _playbackService.LoadTimeline(value.Timeline);
+            if (_coordinator != null) _coordinator.LoadTimeline(value.Timeline);
+            else _playbackService.LoadTimeline(value.Timeline);
             SetupSongDisplay(value.Timeline);
         }
     }
 
     [RelayCommand]
-    private void TogglePlay()
+    private async Task TogglePlay()
     {
         if (_playbackService.CurrentTimeline == null && SelectedSong != null)
         {
-            _playbackService.LoadTimeline(SelectedSong.Timeline);
+            if (_coordinator != null) _coordinator.LoadTimeline(SelectedSong.Timeline);
+            else _playbackService.LoadTimeline(SelectedSong.Timeline);
             SetupSongDisplay(SelectedSong.Timeline);
+        }
+
+        if (_coordinator != null)
+        {
+            await _coordinator.ToggleTimelineAsync();
+            return;
         }
 
         if (_playbackService.State != PlayerState.Playing)
@@ -733,10 +841,19 @@ public partial class MusicPageViewModel : ObservableObject
         var prev = _libraryService.GetPreviousSong();
         if (prev != null)
         {
-            _playbackService.LoadTimeline(prev);
-            SetupSongDisplay(prev);
-            _playbackService.Play();
-            TryAutoFocusGame();
+            if (_coordinator != null)
+            {
+                _coordinator.LoadTimeline(prev);
+                SetupSongDisplay(prev);
+                _ = StartTimelineAsync();
+            }
+            else
+            {
+                _playbackService.LoadTimeline(prev);
+                SetupSongDisplay(prev);
+                _playbackService.Play();
+                TryAutoFocusGame();
+            }
         }
     }
 
@@ -749,10 +866,19 @@ public partial class MusicPageViewModel : ObservableObject
 
         if (next != null)
         {
-            _playbackService.LoadTimeline(next);
-            SetupSongDisplay(next);
-            _playbackService.Play();
-            TryAutoFocusGame();
+            if (_coordinator != null)
+            {
+                _coordinator.LoadTimeline(next);
+                SetupSongDisplay(next);
+                _ = StartTimelineAsync();
+            }
+            else
+            {
+                _playbackService.LoadTimeline(next);
+                SetupSongDisplay(next);
+                _playbackService.Play();
+                TryAutoFocusGame();
+            }
         }
     }
 
@@ -761,17 +887,27 @@ public partial class MusicPageViewModel : ObservableObject
         var randomSong = _libraryService.GetRandomSong();
         if (randomSong != null)
         {
-            _playbackService.LoadTimeline(randomSong);
-            SetupSongDisplay(randomSong);
-            _playbackService.Play();
-            TryAutoFocusGame();
+            if (_coordinator != null)
+            {
+                _coordinator.LoadTimeline(randomSong);
+                SetupSongDisplay(randomSong);
+                _ = StartTimelineAsync();
+            }
+            else
+            {
+                _playbackService.LoadTimeline(randomSong);
+                SetupSongDisplay(randomSong);
+                _playbackService.Play();
+                TryAutoFocusGame();
+            }
         }
     }
 
     [RelayCommand]
     private void Stop()
     {
-        _playbackService.Stop();
+        if (_coordinator != null) _coordinator.StopTimeline();
+        else _playbackService.Stop();
         CurrentPosition = 0;
         CurrentNoteIndex = 0;
         CurrentTimeText = "00:00";

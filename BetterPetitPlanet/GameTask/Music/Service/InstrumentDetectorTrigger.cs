@@ -1,4 +1,5 @@
 using System;
+using BetterPetitPlanet.GameTask.Music.Rendering;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
@@ -59,6 +60,7 @@ public sealed class InstrumentDetectorTrigger : ITaskTrigger
         Mat frameCopy;
         try
         {
+            using var diagnosticClone = MusicOverlayDiagnostics.Measure(MusicOverlayDiagnostics.Metric.OcrCloneMs);
             frameCopy = content.Frame.Clone();
         }
         catch (Exception ex)
@@ -68,10 +70,14 @@ public sealed class InstrumentDetectorTrigger : ITaskTrigger
             return;
         }
 
+        long diagnosticPosted = MusicOverlayDiagnostics.Enabled ? Stopwatch.GetTimestamp() : 0;
         _ = Task.Run(() =>
         {
             try
             {
+                if (diagnosticPosted != 0) MusicOverlayDiagnostics.Record(MusicOverlayDiagnostics.Metric.OcrQueueMs,
+                    (Stopwatch.GetTimestamp() - diagnosticPosted) * 1000.0 / Stopwatch.Frequency);
+                using var diagnosticWork = MusicOverlayDiagnostics.Measure(MusicOverlayDiagnostics.Metric.OcrWorkMs);
                 _detector.DetectFull(frameCopy);
             }
             catch (Exception ex)

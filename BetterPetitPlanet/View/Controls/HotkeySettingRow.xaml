@@ -1,0 +1,42 @@
+<UserControl x:Class="BetterPetitPlanet.View.Controls.HotkeySettingRow"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:local="clr-namespace:BetterPetitPlanet.View.Controls"
+             mc:Ignorable="d">
+    <ui:CardControl Margin="0,0,0,10" CornerRadius="8">
+        <ui:CardControl.Icon>
+            <ui:SymbolIcon Symbol="{Binding Symbol, RelativeSource={RelativeSource AncestorType=local:HotkeySettingRow}}" FontSize="20" />
+        </ui:CardControl.Icon>
+        <ui:CardControl.Header>
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <TextBlock Grid.Row="0"
+                           FontSize="14"
+                           FontWeight="Medium"
+                           Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+                           Text="{Binding Title, RelativeSource={RelativeSource AncestorType=local:HotkeySettingRow}}" />
+                <TextBlock Grid.Row="1"
+                           Margin="0,3,0,0"
+                           FontSize="12"
+                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                           Text="{Binding Subtitle, RelativeSource={RelativeSource AncestorType=local:HotkeySettingRow}}"
+                           TextWrapping="Wrap" />
+            </Grid>
+        </ui:CardControl.Header>
+        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+            <ui:TextBox Width="140"
+                        Margin="0,0,8,0"
+                        Text="{Binding Hotkey, RelativeSource={RelativeSource AncestorType=local:HotkeySettingRow}, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                        TextAlignment="Center" />
+            <ui:Button Command="{Binding ClearCommand, RelativeSource={RelativeSource AncestorType=local:HotkeySettingRow}}"
+                       Icon="{ui:SymbolIcon Dismiss16}"
+                       ToolTip="清除快捷键" />
+        </StackPanel>
+    </ui:CardControl>
+</UserControl>

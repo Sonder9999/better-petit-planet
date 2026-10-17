@@ -42,6 +42,7 @@
 
 	<ItemGroup>
 		<ProjectReference Include="..\BetterPetitPlanet.GameCapture\BetterPetitPlanet.GameCapture.csproj" />
+		<ProjectReference Include="..\BetterPetitPlanet.MusicOverlay.Gpu\BetterPetitPlanet.MusicOverlay.Gpu.csproj" />
 		<ProjectReference Include="..\BetterPetitPlanet.HotkeyCapture\BetterPetitPlanet.HotkeyCapture.csproj" />
 		<ProjectReference Include="..\BetterPetitPlanet.WindowsInput\BetterPetitPlanet.WindowsInput.csproj" />
 	</ItemGroup>

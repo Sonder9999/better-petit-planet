@@ -9,6 +9,7 @@ namespace BetterPetitPlanet.GameTask;
 
 public static class HardwareInputSimulator
 {
+    public static nuint MusicInputMarker => 0x4250504D;
     private static ILogger? _logger;
 
     /// <summary>
