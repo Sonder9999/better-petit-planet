@@ -1,0 +1,41 @@
+{
+  "MusicOverlay": {
+    "Enabled": true,
+    "Backend": 0,
+    "SkinId": "default",
+    "FallDurationMs": 3000,
+    "VisualOffsetMs": 0,
+    "Layout": {
+      "X": 0.0,
+      "Y": 0.0,
+      "Width": 1.0,
+      "Height": 0.78,
+      "Scale": 1.0,
+      "JudgementLine": 0.95
+    },
+    "Effects": {
+      "HitBursts": true,
+      "HoldGlow": true,
+      "SyncLines": true,
+      "LaneGuides": true,
+      "KeyLabels": true,
+      "Intensity": 1.0,
+      "BackgroundEnabled": false,
+      "BackgroundOpacity": 0.2
+    },
+    "ReadySuccessCount": 2,
+    "ReadyFailureCount": 3,
+    "DetectionFreshnessMs": 2000,
+    "CaptureFreshnessMs": 2000,
+    "SnapshotIntervalMs": 50,
+    "WindowPollIntervalMs": 100
+  },
+  "Hotkey": {
+    "ToggleMusicTimelineHotkey": "Ctrl+F9",
+    "ToggleMusicOverlayHotkey": "Ctrl+F12",
+    "ToggleAutoPickHotkey": "F8",
+    "ToggleMusicHotkey": "F9",
+    "PreviousSongHotkey": "F10",
+    "NextSongHotkey": "F11"
+  }
+}
