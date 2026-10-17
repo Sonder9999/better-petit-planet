@@ -32,6 +32,7 @@ BetterPetitPlanet 是针对游戏《星布谷地》（Petit Planet）开发的�
 ### 5. 开发者指南 (`development/`)
 - [开发环境配置](development/environment-setup.md)：.NET 8 SDK、Visual Studio 配置、原生依赖库（DirectML、ONNX Runtime、OpenCV）配置指南。
 - [代码与工程规范](development/coding-standards.md)：项目命名约定、去历史化约束、资源释放规范与文档标准。
+- [开发者与 AI 协同测试规范](dev_testing_guidelines.md)：构建优先验证、纯逻辑核心测试保护、拒绝侵入式自动化测试与端到端用户验收准则。
 - [编译与发布流程](development/build-and-release.md)：Release 产物发布、自包含与依赖型打包指令规范。
 
 ### 6. 核心接口契约 (`api/`)

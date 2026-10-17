@@ -40,3 +40,12 @@
      - `feat(ui): stream live official cover visuals`
      - `fix(capture): resolve DirectML context reentrancy`
      - `refactor(music): decouple instrument asset paths`
+
+---
+
+## 5. 自动化测试与验证规范
+
+详见 [开发者与 AI 协同测试规范](../dev_testing_guidelines.md)。
+- 默认优先以 `dotnet build` 验证语法与接口契约；
+- 仅核心算法、数据解析与输入安全逻辑保留纯逻辑测试；
+- 严禁编写或执行任何抢占焦点、创建真实窗口或发送系统按键的自动化测试。

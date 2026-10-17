@@ -148,54 +148,6 @@ public class MusicPlaybackSeekTest
         Assert.Equal(4.0, after.Position);
     }
 
-    [MusicDesktopInputFact]
-    public void ForegroundGuard_BlocksSendKeyWhenGameIsNotForeground()
-    {
-        bool isForeground = false;
-        bool owned = false;
-        HardwareInputSimulator.ForegroundGuard = () => isForeground;
-
-        try
-        {
-            bool sentWhenBackground = HardwareInputSimulator.SendKeyDown("A");
-            Assert.False(sentWhenBackground);
-
-            isForeground = true;
-            // When foreground, SendKey attempts Win32 SendInput (returns true)
-            owned = HardwareInputSimulator.SendKeyDown("A");
-            Assert.True(owned);
-        }
-        finally
-        {
-            if (owned) HardwareInputSimulator.SendKeyUp("A");
-            HardwareInputSimulator.ForegroundGuard = null;
-        }
-    }
-
-    [MusicDesktopInputFact]
-    public void ActivateGameWindow_BringsGameToForegroundIfRunning()
-    {
-        var configService = new DummyConfigService();
-        var processDetector = new GameProcessDetector(configService);
-        if (processDetector.IsGameRunning())
-        {
-            var activated = processDetector.ActivateGameWindow();
-            bool isFgAfter = false;
-            for (int i = 0; i < 10; i++)
-            {
-                System.Threading.Thread.Sleep(50);
-                if (processDetector.IsGameForeground())
-                {
-                    isFgAfter = true;
-                    break;
-                }
-            }
-
-            Assert.True(activated);
-            Assert.True(isFgAfter);
-        }
-    }
-
     [Fact]
     public void ExtractSections_WithExplicitTags_ExtractsCorrectMarkers()
     {

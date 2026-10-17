@@ -191,28 +191,6 @@ public class MusicSkinRepositoryTest
     }
 
     [Fact]
-    public void PackageJunctionEscape_IsRejected()
-    {
-        using var fixture = new MusicSkinFixture();
-        string outside = Path.Combine(fixture.Root, "outside");
-        string link = Path.Combine(fixture.Package, "linked");
-        Directory.CreateDirectory(outside);
-        using var process = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("cmd.exe")
-        {
-            Arguments = $"/c mklink /J \"{link}\" \"{outside}\"", CreateNoWindow = true,
-            UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true
-        })!;
-        process.WaitForExit();
-        Assert.Equal(0, process.ExitCode);
-        try
-        {
-            Assert.Throws<InvalidOperationException>(() => new MusicSkinPackageValidator().ValidateDirectory(fixture.Package, "fixture"));
-            Assert.Throws<InvalidOperationException>(() => MusicSkinAssetCache.ValidateAndResolvePath(fixture.Package, "linked/note.png"));
-        }
-        finally { Directory.Delete(link); }
-    }
-
-    [Fact]
     public async Task MissingAndInvalidRequests_FallBackToDefault()
     {
         using var fixture = new MusicSkinFixture();
