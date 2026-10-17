@@ -118,7 +118,7 @@ public sealed partial class MusicPlaybackService : IDisposable
         {
             if (_disposed || !_ready || _state == PlayerState.Playing || _currentTimeline?.Events.Count is not > 0) return;
             if (_automatic && !CanAutomaticallyPlay()) return;
-            if (_configService.Config.Music.AutoFocusGameOnPlayback && _gameTarget != null)
+            if (_configService.Config.Music.AutoFocusGameOnPlayback && _gameTarget != null && !_gameTarget.IsForeground)
                 _processDetector.ActivateGameWindow();
             if (_state != PlayerState.Paused && !_positionSelected)
             {
@@ -148,6 +148,7 @@ public sealed partial class MusicPlaybackService : IDisposable
             if (_state != PlayerState.Playing) return;
             _clock.Pause();
             _scheduler.ReleaseAll(_target, _configService.Config.Music.InputMode);
+            HardwareInputSimulator.ReleaseAllHeldKeys();
             SetState(PlayerState.Paused);
             _revision++;
             Publish();
@@ -162,6 +163,7 @@ public sealed partial class MusicPlaybackService : IDisposable
         {
             _clock.Pause();
             _scheduler.Seek(0, _target, _configService.Config.Music.InputMode, restartExhausted);
+            HardwareInputSimulator.ReleaseAllHeldKeys();
             _clock.Seek(0);
             _positionSelected = false;
             _revision++;
@@ -180,6 +182,7 @@ public sealed partial class MusicPlaybackService : IDisposable
             if (_automatic == enabled) return;
             if (enabled && !CanAutomaticallyPlay()) return;
             _scheduler.ReleaseAll(_target, _configService.Config.Music.InputMode);
+            HardwareInputSimulator.ReleaseAllHeldKeys();
             // An off/on transition never catches up notes already passed while manual.
             if (enabled && _clock.IsRunning) _scheduler.SkipThrough(_clock.PositionMs);
             _automatic = enabled;
@@ -197,7 +200,11 @@ public sealed partial class MusicPlaybackService : IDisposable
             if (!ready)
             {
                 if (_state == PlayerState.Playing) Pause();
-                else _scheduler.ReleaseAll(_target, _configService.Config.Music.InputMode);
+                else
+                {
+                    _scheduler.ReleaseAll(_target, _configService.Config.Music.InputMode);
+                    HardwareInputSimulator.ReleaseAllHeldKeys();
+                }
             }
             Publish();
         }
@@ -221,6 +228,7 @@ public sealed partial class MusicPlaybackService : IDisposable
         {
             if (_disposed) return;
             StopCore(restartExhausted: false);
+            HardwareInputSimulator.ReleaseAllHeldKeys();
             _disposed = true;
             _lifetime.Cancel();
             // Failed releases are retained and retried by the worker's finalizer.

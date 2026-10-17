@@ -120,7 +120,11 @@ public sealed partial class MusicPlaybackService
         }
         finally
         {
-            lock (_stateLock) _scheduler.ReleaseAll(_target, _configService.Config.Music.InputMode, restartExhausted: false);
+            lock (_stateLock)
+            {
+                _scheduler.ReleaseAll(_target, _configService.Config.Music.InputMode, restartExhausted: false);
+                HardwareInputSimulator.ReleaseAllHeldKeys();
+            }
             while (true)
             {
                 lock (_stateLock)

@@ -13,6 +13,7 @@ public sealed class MusicInputObserver : IDisposable
     public event Action<string, string, double>? InputObserved;
     public event Action<Exception>? ObservationFailed;
     public string[] ActiveKeys => _keys.ActiveKeys;
+    public bool IsPhysicalKeyDown(string key) => _keys.IsHeld(key);
 
     public MusicInputObserver() => _callback = OnKeyboard;
 

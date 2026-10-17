@@ -11,6 +11,7 @@ namespace BetterPetitPlanet.Core.Process;
 public sealed class GameProcessDetector
 {
     private static readonly long DiscoveryRefreshIntervalMs = 500;
+    private static readonly object ActivationLock = new();
 
     private readonly IConfigService? _configService;
     private readonly GameWindowDiscoveryCache _discovery;
@@ -413,45 +414,108 @@ public sealed class GameProcessDetector
 
     public bool ActivateGameWindow()
     {
-        var snapshot = _discovery.RefreshSynchronously();
-        var hwnd = snapshot.MainWindowHandle;
-        if (hwnd == IntPtr.Zero) return false;
-
-        var targetHwnd = new HWND(hwnd);
-        SwitchToThisWindow(hwnd, true);
-
-        if (User32.IsIconic(targetHwnd))
+        lock (ActivationLock)
         {
-            User32.ShowWindow(targetHwnd, ShowWindowCommand.SW_RESTORE);
+            var snapshot = _discovery.RefreshSynchronously();
+            var hwnd = snapshot.MainWindowHandle;
+            if (hwnd == IntPtr.Zero) return false;
+
+            var targetHwnd = new HWND(hwnd);
+
+            // 1. 若当前前台窗口已经是目标游戏窗口，直接返回成功，杜绝任何多余的按键模拟与窗口操作
+            var fgHwnd = (IntPtr)User32.GetForegroundWindow();
+            if (fgHwnd == hwnd) return true;
+
+            // 2. 检查最小化状态，若已最小化则恢复
+            if (User32.IsIconic(targetHwnd))
+            {
+                User32.ShowWindow(targetHwnd, ShowWindowCommand.SW_RESTORE);
+            }
+            else
+            {
+                User32.ShowWindow(targetHwnd, ShowWindowCommand.SW_SHOW);
+            }
+
+            SwitchToThisWindow(hwnd, true);
+
+            if ((IntPtr)User32.GetForegroundWindow() == hwnd) return true;
+
+            // 3. 尝试标准前台激活 API
+            User32.BringWindowToTop(targetHwnd);
+            if (User32.SetForegroundWindow(targetHwnd))
+            {
+                if ((IntPtr)User32.GetForegroundWindow() == hwnd) return true;
+            }
+
+            // 4. 若标准前台激活受限于 Windows UIPI / SetForegroundWindow 规则，采用 AttachThreadInput + Alt 模拟兜底
+            var foregroundHwnd = User32.GetForegroundWindow();
+            var foregroundThreadId = User32.GetWindowThreadProcessId(foregroundHwnd, out _);
+            var targetThreadId = User32.GetWindowThreadProcessId(targetHwnd, out _);
+            var currentThreadId = Kernel32.GetCurrentThreadId();
+
+            bool attachedForeground = false;
+            bool attachedTarget = false;
+
+            try
+            {
+                if (foregroundThreadId != 0 && foregroundThreadId != currentThreadId)
+                {
+                    attachedForeground = User32.AttachThreadInput(currentThreadId, foregroundThreadId, true);
+                }
+                if (targetThreadId != 0 && targetThreadId != currentThreadId)
+                {
+                    attachedTarget = User32.AttachThreadInput(currentThreadId, targetThreadId, true);
+                }
+
+                // 检查物理按键状态：
+                // 如果用户本人正在物理按住 Alt，严禁发送任何合成的 Alt 按键或释放，避免打断破坏用户的物理输入；
+                // 如果用户未物理按住 Alt，则通过 try...finally 严格保障成对发送 Alt Down 与 Alt Up。
+                bool wasAltPhysicallyDown = (User32.GetAsyncKeyState((ushort)User32.VK.VK_MENU) & 0x8000) != 0;
+                bool simulatedAltDown = false;
+
+                try
+                {
+                    if (!wasAltPhysicallyDown)
+                    {
+                        User32.keybd_event(0x12, 0, 0, IntPtr.Zero);
+                        simulatedAltDown = true;
+                    }
+
+                    User32.SetForegroundWindow(targetHwnd);
+                    User32.BringWindowToTop(targetHwnd);
+                }
+                finally
+                {
+                    if (simulatedAltDown)
+                    {
+                        User32.keybd_event(0x12, 0, User32.KEYEVENTF.KEYEVENTF_KEYUP, IntPtr.Zero);
+                    }
+                    else if (!wasAltPhysicallyDown)
+                    {
+                        // 补充防御：如果用户并没有物理按住 Alt，但检测到 Alt 处于卡键状态（例如之前的残留泄漏）
+                        // 则发送一次 Alt Up 确保消除卡键
+                        if ((User32.GetAsyncKeyState((ushort)User32.VK.VK_MENU) & 0x8000) != 0)
+                        {
+                            User32.keybd_event(0x12, 0, User32.KEYEVENTF.KEYEVENTF_KEYUP, IntPtr.Zero);
+                        }
+                    }
+                }
+            }
+            finally
+            {
+                // 一对一安全解绑 AttachThreadInput，杜绝任何输入队列或线程锁泄露
+                if (attachedTarget)
+                {
+                    try { User32.AttachThreadInput(currentThreadId, targetThreadId, false); } catch { }
+                }
+                if (attachedForeground)
+                {
+                    try { User32.AttachThreadInput(currentThreadId, foregroundThreadId, false); } catch { }
+                }
+            }
+
+            return IsForegroundForSnapshot(snapshot);
         }
-        else
-        {
-            User32.ShowWindow(targetHwnd, ShowWindowCommand.SW_SHOW);
-        }
-
-        var fgHwnd = User32.GetForegroundWindow();
-        if ((IntPtr)fgHwnd == hwnd) return true;
-
-        var foregroundThreadId = User32.GetWindowThreadProcessId(fgHwnd, out _);
-        var targetThreadId = User32.GetWindowThreadProcessId(targetHwnd, out _);
-        var currentThreadId = Kernel32.GetCurrentThreadId();
-
-        if (foregroundThreadId != 0 && foregroundThreadId != currentThreadId)
-            User32.AttachThreadInput(currentThreadId, foregroundThreadId, true);
-        if (targetThreadId != 0 && targetThreadId != currentThreadId)
-            User32.AttachThreadInput(currentThreadId, targetThreadId, true);
-
-        User32.keybd_event(0x12, 0, 0, IntPtr.Zero);
-        User32.SetForegroundWindow(targetHwnd);
-        User32.BringWindowToTop(targetHwnd);
-        User32.keybd_event(0x12, 0, User32.KEYEVENTF.KEYEVENTF_KEYUP, IntPtr.Zero);
-
-        if (foregroundThreadId != 0 && foregroundThreadId != currentThreadId)
-            User32.AttachThreadInput(currentThreadId, foregroundThreadId, false);
-        if (targetThreadId != 0 && targetThreadId != currentThreadId)
-            User32.AttachThreadInput(currentThreadId, targetThreadId, false);
-
-        return IsForegroundForSnapshot(snapshot);
     }
 
     public Rectangle GetClientSize(IntPtr hwnd)

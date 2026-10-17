@@ -58,4 +58,34 @@ public class KeyInputTransportsTest
         var cfg = new BetterPetitPlanet.Core.Config.MusicConfig();
         Assert.False(cfg.AutoPauseOnFocusLost);
     }
+
+    [Fact]
+    public void HardwareInputSimulator_HeldKeysTracker_RecordsAndClearsCorrectly()
+    {
+        HardwareInputSimulator.ClearHeldKeys();
+        Assert.Empty(HardwareInputSimulator.GetHeldKeys());
+
+        ushort scancode = HardwareInputSimulator.GetScancode("A");
+        ushort vk = HardwareInputSimulator.GetVirtualKey("A");
+
+        HardwareInputSimulator.RecordKeyDown(scancode, vk);
+        Assert.True(HardwareInputSimulator.IsKeyHeld(scancode, vk));
+        Assert.Single(HardwareInputSimulator.GetHeldKeys());
+
+        HardwareInputSimulator.RecordKeyUp(scancode, vk);
+        Assert.False(HardwareInputSimulator.IsKeyHeld(scancode, vk));
+        Assert.Empty(HardwareInputSimulator.GetHeldKeys());
+    }
+
+    [Fact]
+    public void HardwareInputSimulator_NormalizeKeyIdentity_FillsMissingScancodeOrVk()
+    {
+        var normFromScancode = KeyIdentity.Normalize(0x1E, 0);
+        Assert.Equal(0x1E, normFromScancode.Scancode);
+        Assert.Equal((ushort)'A', normFromScancode.Vk);
+
+        var normFromVk = KeyIdentity.Normalize(0, (ushort)'A');
+        Assert.Equal(0x1E, normFromVk.Scancode);
+        Assert.Equal((ushort)'A', normFromVk.Vk);
+    }
 }

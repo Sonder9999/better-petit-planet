@@ -39,4 +39,12 @@ public sealed class MusicPhysicalKeys
             return keys;
         }
     }
+
+    public bool IsHeld(string key)
+    {
+        lock (_lock)
+        {
+            return _held.Contains(key);
+        }
+    }
 }

@@ -97,7 +97,10 @@ public sealed partial class MusicOverlayPresenter : IDisposable
             activate: () =>
             {
                 _config.Config.MusicOverlay.Enabled = true;
-                _process.ActivateGameWindow();
+                if (!_process.IsGameForegroundCached())
+                {
+                    _process.ActivateGameWindow();
+                }
             },
             ensureWindow: CreateWindowAsync,
             setInteractive: adjusting =>
