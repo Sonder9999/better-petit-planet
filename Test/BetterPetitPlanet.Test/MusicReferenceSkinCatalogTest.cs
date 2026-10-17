@@ -57,4 +57,15 @@ public class MusicReferenceSkinCatalogTest
         Assert.Contains(skins, skin => skin.Id == "builtin:furina");
         Assert.Contains(skins, skin => skin.Id == "builtin:columbina");
     }
+
+    [Fact]
+    public async Task BuiltInSkin_LoadWithoutFramesArchive_LoadsReferenceSuccessfully()
+    {
+        var repository = new MusicSkinRepository();
+        var result = await repository.LoadSkinResultAsync("builtin:neuvillette");
+        Assert.Equal("builtin:neuvillette", result.Skin.Id);
+        Assert.NotNull(result.Skin.Reference);
+        Assert.NotNull(result.Skin.NoteTapBitmap);
+        Assert.NotNull(result.Skin.NoteHoldBitmap);
+    }
 }

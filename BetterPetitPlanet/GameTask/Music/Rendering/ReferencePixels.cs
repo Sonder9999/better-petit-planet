@@ -50,7 +50,7 @@ internal sealed class ReferencePixels
         Bytes = new byte[Width * Height * 4]; bitmap.CopyPixels(Bytes, Width * 4, 0);
         _rowLeft = new int[Height]; _rowRight = new int[Height];
         Array.Fill(_rowLeft, Width);
-        _left = Width; _top = Height;
+        int left = Width, right = 0, top = Height, bottom = 0;
         ReadOnlySpan<uint> pixels = MemoryMarshal.Cast<byte, uint>(Bytes);
         for (int y = 0; y < Height; y++)
         {
@@ -61,9 +61,34 @@ internal sealed class ReferencePixels
                 _rowLeft[y] = Math.Min(_rowLeft[y], x); _rowRight[y] = x + 1;
             }
             if (_rowRight[y] == 0) continue;
-            _left = Math.Min(_left, _rowLeft[y]); _right = Math.Max(_right, _rowRight[y]);
-            _top = Math.Min(_top, y); _bottom = y + 1;
+            left = Math.Min(left, _rowLeft[y]); right = Math.Max(right, _rowRight[y]);
+            top = Math.Min(top, y); bottom = y + 1;
         }
+        _left = left; _right = right; _top = top; _bottom = bottom;
+    }
+
+    public ReferencePixels(BitmapSource source)
+    {
+        using var diagnostic = MusicOverlayDiagnostics.Measure(MusicOverlayDiagnostics.Metric.DecodeMs);
+        var bitmap = source.Format == PixelFormats.Pbgra32 ? source : new FormatConvertedBitmap(source, PixelFormats.Pbgra32, null, 0);
+        Width = bitmap.PixelWidth; Height = bitmap.PixelHeight;
+        Bytes = new byte[Width * Height * 4]; bitmap.CopyPixels(Bytes, Width * 4, 0);
+        _rowLeft = new int[Height]; _rowRight = new int[Height];
+        Array.Fill(_rowLeft, Width);
+        int left = Width, right = 0, top = Height, bottom = 0;
+        ReadOnlySpan<uint> pixels = MemoryMarshal.Cast<byte, uint>(Bytes);
+        for (int y = 0; y < Height; y++)
+        {
+            for (int x = 0; x < Width; x++)
+            {
+                if (pixels[y * Width + x] == 0) continue;
+                _rowLeft[y] = Math.Min(_rowLeft[y], x); _rowRight[y] = x + 1;
+            }
+            if (_rowRight[y] == 0) continue;
+            left = Math.Min(left, _rowLeft[y]); right = Math.Max(right, _rowRight[y]);
+            top = Math.Min(top, y); bottom = y + 1;
+        }
+        _left = left; _right = right; _top = top; _bottom = bottom;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]

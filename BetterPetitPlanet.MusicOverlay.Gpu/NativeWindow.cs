@@ -74,4 +74,6 @@ internal static class NativeWindow
     [DllImport("user32.dll")] internal static extern uint GetDpiForWindow(nint hwnd);
     [DllImport("user32.dll")] internal static extern bool GetClientRect(nint hwnd, out Rect rect);
     [DllImport("user32.dll")] internal static extern nint SetThreadDpiAwarenessContext(nint context);
+    [DllImport("gdi32.dll")] internal static extern nint CreateRectRgn(int x1, int y1, int x2, int y2);
+    [DllImport("user32.dll")] internal static extern int SetWindowRgn(nint hwnd, nint hrgn, bool redraw);
 }

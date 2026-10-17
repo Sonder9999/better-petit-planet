@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
+using System.Windows.Media.Imaging;
 using BetterPetitPlanet.GameTask.Music.Skins;
 
 namespace BetterPetitPlanet.GameTask.Music.Rendering;
@@ -15,6 +16,7 @@ internal static class ReferenceFrameStore
     private static readonly Dictionary<string, LinkedListNode<Entry>> Frames = [];
     private static readonly LinkedList<Entry> Lru = new();
     private static readonly Dictionary<string, ZipArchive> Archives = [];
+    private static readonly Dictionary<string, BitmapSource> Atlases = [];
     private static long _bytes;
     internal static long CachedBytes { get { lock (Gate) return _bytes; } }
 
@@ -27,9 +29,30 @@ internal static class ReferenceFrameStore
         }
     }
 
+    private static ZipArchive OpenZipReadOnly(string path)
+    {
+        byte[] bytes = File.ReadAllBytes(path);
+        var stream = new MemoryStream(bytes);
+        return new ZipArchive(stream, ZipArchiveMode.Read, leaveOpen: false);
+    }
+
     public static void Validate(ReferenceSkinDefinition skin)
     {
-        using var archive = ZipFile.OpenRead(Path.Combine(MusicReferenceSkinCatalog.AssetRoot, "frames", skin.Id + ".zip"));
+        string zipPath = Path.Combine(MusicReferenceSkinCatalog.AssetRoot, "frames", skin.Id + ".zip");
+        if (!File.Exists(zipPath))
+        {
+            // If individual frame zip package does not exist, ensure compiled atlas exists
+            string? atlasRelative = skin.Hit?.Url;
+            if (atlasRelative != null)
+            {
+                string direct = Path.Combine(MusicReferenceSkinCatalog.AssetRoot, atlasRelative);
+                if (File.Exists(direct) || MusicDefaultSkin.ResolveAssetPath(atlasRelative) != null)
+                    return;
+            }
+            return;
+        }
+
+        using var archive = OpenZipReadOnly(zipPath);
         void Check(string url, int count, int size)
         {
             string prefix = Path.GetFileNameWithoutExtension(url) + "/";
@@ -59,23 +82,74 @@ internal static class ReferenceFrameStore
             string skin = Path.GetFileNameWithoutExtension(atlasUrl).Split('-')[0];
             if (!Archives.TryGetValue(skin, out var archive))
             {
-                // Frame pixels are independent of the archive once decoded.
-                if (Archives.Count >= 4)
+                string zipPath = Path.Combine(MusicReferenceSkinCatalog.AssetRoot, "frames", skin + ".zip");
+                if (File.Exists(zipPath))
                 {
-                    foreach (var opened in Archives.Values) opened.Dispose();
-                    Archives.Clear();
+                    if (Archives.Count >= 4)
+                    {
+                        foreach (var opened in Archives.Values) opened.Dispose();
+                        Archives.Clear();
+                    }
+                    Archives[skin] = archive = OpenZipReadOnly(zipPath);
                 }
-                Archives[skin] = archive = ZipFile.OpenRead(Path.Combine(MusicReferenceSkinCatalog.AssetRoot, "frames", skin + ".zip"));
             }
-            using var stream = (archive.GetEntry(key) ?? throw new FileNotFoundException("内置皮肤动画帧缺失", key)).Open();
-            var pixels = new ReferencePixels(stream);
-            while (_bytes + pixels.ByteSize > MaximumBytes && Lru.Last is { } last)
+
+            if (archive != null && archive.GetEntry(key) is { } entry)
             {
-                Lru.RemoveLast(); Frames.Remove(last.Value.Key); _bytes -= last.Value.Pixels.ByteSize;
+                using var stream = entry.Open();
+                var pixels = new ReferencePixels(stream);
+                StorePixelLru(key, pixels);
+                return pixels;
             }
-            var node = Lru.AddFirst(new Entry(key, pixels)); Frames.Add(key, node); _bytes += pixels.ByteSize;
-            return pixels;
+
+            var atlasPixels = LoadFromAtlas(atlasUrl, frame);
+            if (atlasPixels != null)
+            {
+                StorePixelLru(key, atlasPixels);
+                return atlasPixels;
+            }
+
+            throw new FileNotFoundException("内置皮肤动画帧缺失", key);
         }
+    }
+
+    private static ReferencePixels? LoadFromAtlas(string atlasUrl, int frame)
+    {
+        if (!Atlases.TryGetValue(atlasUrl, out var atlas))
+        {
+            string? path = Path.Combine(MusicReferenceSkinCatalog.AssetRoot, atlasUrl);
+            if (!File.Exists(path)) path = MusicDefaultSkin.ResolveAssetPath(atlasUrl);
+            if (path == null || !File.Exists(path)) return null;
+
+            var image = new BitmapImage();
+            image.BeginInit();
+            image.CacheOption = BitmapCacheOption.OnLoad;
+            image.UriSource = new Uri(path, UriKind.Absolute);
+            image.EndInit();
+            image.Freeze();
+            Atlases[atlasUrl] = atlas = image;
+        }
+
+        const int frameSize = 512;
+        int columns = atlas.PixelWidth >= 4096 ? 8 : Math.Max(1, atlas.PixelWidth / frameSize);
+        int col = frame % columns;
+        int row = frame / columns;
+
+        if ((col + 1) * frameSize > atlas.PixelWidth || (row + 1) * frameSize > atlas.PixelHeight)
+            return null;
+
+        var cropped = new CroppedBitmap(atlas, new System.Windows.Int32Rect(col * frameSize, row * frameSize, frameSize, frameSize));
+        cropped.Freeze();
+        return new ReferencePixels(cropped);
+    }
+
+    private static void StorePixelLru(string key, ReferencePixels pixels)
+    {
+        while (_bytes + pixels.ByteSize > MaximumBytes && Lru.Last is { } last)
+        {
+            Lru.RemoveLast(); Frames.Remove(last.Value.Key); _bytes -= last.Value.Pixels.ByteSize;
+        }
+        var node = Lru.AddFirst(new Entry(key, pixels)); Frames.Add(key, node); _bytes += pixels.ByteSize;
     }
 
     public static void Clear()
@@ -85,6 +159,7 @@ internal static class ReferenceFrameStore
             Frames.Clear(); Lru.Clear(); _bytes = 0;
             foreach (var archive in Archives.Values) archive.Dispose();
             Archives.Clear();
+            Atlases.Clear();
         }
     }
 }
