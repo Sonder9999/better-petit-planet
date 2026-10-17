@@ -19,6 +19,7 @@ publish/
 
 # Data & Storage Isolation (AGENT requirement: no music scores in git)
 data/songs/
+data/music-skins/
 data/logs/
 data/snapshots/
 data/cache/
@@ -29,6 +30,15 @@ config/config.json
 # Test Artifacts & Local Fixtures
 Test/**/Validation/
 Test/**/Fixtures/item-name-samples.json
+Test/**/Fixtures/Music/ReferenceSkins/
+Test/**/Fixtures/Music/*.png
+test_*_verify/
+**/output/
+
+# Music Overlay Reference Assets & Large Atlases
+BetterPetitPlanet/Assets/MusicOverlay/Reference/frames/
+BetterPetitPlanet/Assets/MusicOverlay/Reference/assets/
+BetterPetitPlanet/Assets/MusicOverlay/Reference/asset-index.json
 
 # Local artifacts
 *.log
@@ -38,3 +48,4 @@ Test/**/Fixtures/item-name-samples.json
 *.onnx
 Assets/Model/
 Assets/Models/
+

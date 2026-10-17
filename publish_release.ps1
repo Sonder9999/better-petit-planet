@@ -1,4 +1,10 @@
 # BetterPetitPlanet Release Publish Script
+[CmdletBinding()]
+param(
+    [string]$CondaPrefix = $env:CONDA_PREFIX,
+    [string]$CustomOcrModelDirectory = $null
+)
+
 $ErrorActionPreference = "Stop"
 
 $ProjectRoot = $PSScriptRoot
@@ -14,7 +20,7 @@ Write-Host "==================================================" -ForegroundColor
 
 # 0. If files in release are locked by a running instance, rename them to .old
 if (Test-Path $ReleaseDir) {
-    @("BetterPetitPlanet.exe", "BetterPetitPlanet.dll", "BetterPetitPlanet.GameCapture.dll", "BetterPetitPlanet.HotkeyCapture.dll", "BetterPetitPlanet.WindowsInput.dll") | ForEach-Object {
+    @("BetterPetitPlanet.exe", "BetterPetitPlanet.dll", "BetterPetitPlanet.MusicOverlay.Gpu.dll", "BetterPetitPlanet.GameCapture.dll", "BetterPetitPlanet.HotkeyCapture.dll", "BetterPetitPlanet.WindowsInput.dll") | ForEach-Object {
         $filePath = Join-Path $ReleaseDir $PSItem
         if (Test-Path $filePath) {
             try {
@@ -61,26 +67,56 @@ foreach ($songFile in $ReleaseSongs) {
     }
 }
 
+# 2.1 Copy music skins
+$SkinsSource = Join-Path $ProjectRoot "data\music-skins"
+$SkinsDest = Join-Path $ReleaseDir "data\music-skins"
+if (Test-Path $SkinsSource) {
+    Write-Host "Copying music skins from $SkinsSource to $SkinsDest..." -ForegroundColor Yellow
+    if (Test-Path $SkinsDest) {
+        Remove-Item -Path $SkinsDest -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    Copy-Item -Path $SkinsSource -Destination $SkinsDest -Recurse -Force
+} else {
+    Write-Host "Warning: Music skins directory not found at $SkinsSource" -ForegroundColor DarkYellow
+}
+
 # 3. Copy OCR models (recognition & detection)
 $ModelDestDir = Join-Path $ReleaseDir "Assets\Models\Ocr"
 New-Item -ItemType Directory -Path $ModelDestDir -Force | Out-Null
 
-$RecCandidate1 = Join-Path $ProjectRoot "BetterPetitPlanet\Assets\Models\Ocr\ch_PP-OCRv3_rec_infer.onnx"
-$RecCandidate2 = Join-Path $env:USERPROFILE "miniconda3\Lib\site-packages\rapidocr_onnxruntime\models\ch_PP-OCRv3_rec_infer.onnx"
-
-if (Test-Path $RecCandidate1) {
-    Copy-Item -Path $RecCandidate1 -Destination (Join-Path $ModelDestDir "ch_PP-OCRv3_rec_infer.onnx") -Force
-} elseif (Test-Path $RecCandidate2) {
-    Copy-Item -Path $RecCandidate2 -Destination (Join-Path $ModelDestDir "ch_PP-OCRv3_rec_infer.onnx") -Force
+$ocrSearchDirs = @(
+    (Join-Path $ProjectRoot "BetterPetitPlanet\Assets\Models\Ocr")
+)
+if ($CustomOcrModelDirectory -and (Test-Path $CustomOcrModelDirectory)) {
+    $ocrSearchDirs += $CustomOcrModelDirectory
+}
+if ($CondaPrefix -and (Test-Path $CondaPrefix)) {
+    $ocrSearchDirs += (Join-Path $CondaPrefix "Lib\site-packages\rapidocr_onnxruntime\models")
+}
+if ($env:USERPROFILE) {
+    foreach ($cSub in @("miniconda3", "anaconda3", "miniforge3")) {
+        $candidateConda = Join-Path $env:USERPROFILE "$cSub\Lib\site-packages\rapidocr_onnxruntime\models"
+        if (Test-Path $candidateConda) {
+            $ocrSearchDirs += $candidateConda
+        }
+    }
 }
 
-$DetCandidate1 = Join-Path $ProjectRoot "BetterPetitPlanet\Assets\Models\Ocr\ch_PP-OCRv3_det_infer.onnx"
-$DetCandidate2 = Join-Path $env:USERPROFILE "miniconda3\Lib\site-packages\rapidocr_onnxruntime\models\ch_PP-OCRv3_det_infer.onnx"
-
-if (Test-Path $DetCandidate1) {
-    Copy-Item -Path $DetCandidate1 -Destination (Join-Path $ModelDestDir "ch_PP-OCRv3_det_infer.onnx") -Force
-} elseif (Test-Path $DetCandidate2) {
-    Copy-Item -Path $DetCandidate2 -Destination (Join-Path $ModelDestDir "ch_PP-OCRv3_det_infer.onnx") -Force
+foreach ($modelName in @("ch_PP-OCRv3_rec_infer.onnx", "ch_PP-OCRv3_det_infer.onnx")) {
+    $foundPath = $null
+    foreach ($searchDir in $ocrSearchDirs) {
+        $candidatePath = Join-Path $searchDir $modelName
+        if (Test-Path $candidatePath) {
+            $foundPath = $candidatePath
+            break
+        }
+    }
+    if ($foundPath) {
+        Write-Host "Copying OCR model: $modelName from $foundPath" -ForegroundColor Yellow
+        Copy-Item -Path $foundPath -Destination (Join-Path $ModelDestDir $modelName) -Force
+    } else {
+        Write-Host "Warning: OCR model $modelName not found in search paths; skipping." -ForegroundColor DarkYellow
+    }
 }
 
 Write-Host "==================================================" -ForegroundColor Green

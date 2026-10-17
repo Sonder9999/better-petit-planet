@@ -36,7 +36,7 @@ public sealed class MusicDefaultSkinAssetTest
         string root = Path.Combine(AppContext.BaseDirectory, "Assets", "MusicOverlay", "NativeDefault");
         using var manifest = JsonDocument.Parse(File.ReadAllText(Path.Combine(root, "manifest.json")));
         var entries = manifest.RootElement.GetProperty("files").EnumerateArray().ToArray();
-        Assert.Equal(13, entries.Length);
+        Assert.Equal(14, entries.Length);
         foreach (var entry in entries)
         {
             byte[] bytes = File.ReadAllBytes(Path.Combine(root, entry.GetProperty("path").GetString()!));

@@ -1,0 +1,76 @@
+{
+  "schemaVersion": 1,
+  "description": "Minimal native Nahida static resources; excludes reference frame archives and other skins.",
+  "files": [
+    {
+      "path": "skin/UI_Icon_MusicGame_Note_01_Nahida.png",
+      "bytes": 21047,
+      "sha256": "76B3C111BFE03E98D636EEDA1337E8D97829C10EE6582D82BD912C9B0FF46A57"
+    },
+    {
+      "path": "skin/UI_Icon_MusicGame_Note_02_Nahida.png",
+      "bytes": 20680,
+      "sha256": "ECDFDC522AACDA366F0FED1AA76C9204FE0147AEC6859A4ACC60A1D84B67F77B"
+    },
+    {
+      "path": "skin/UI_Img_MusicGame_Nahida_Bg_Light.png",
+      "bytes": 3089,
+      "sha256": "28441D7CD4900BE7BD24FD73DC6EB303819DF31BF8867D34178DBC1EA29469DC"
+    },
+    {
+      "path": "skin/UI_Img_MusicGame_Nahida_Bg_Light_Gradient.png",
+      "bytes": 5904,
+      "sha256": "410B67B93B34C88C6F1562FBBC839124F55495EEC212D389AEEB4FD64027CA86"
+    },
+    {
+      "path": "skin/UI_Img_MusicGame_Nahida_Bg_Mid00.png",
+      "bytes": 310538,
+      "sha256": "A1C88201205FB4285664FDD9E79CCF3EF97F41E4AD1DC45904C46532D6809F03"
+    },
+    {
+      "path": "skin/UI_Img_MusicGame_Nahida_Bg_Loop00.png",
+      "bytes": 306722,
+      "sha256": "B12B259AB521744577752850892F87E1507FA2840870D559FF1DEAAF19197A52"
+    },
+    {
+      "path": "ui/UI_Img_MusicGame_Gradient_Common.png",
+      "bytes": 6021,
+      "sha256": "784F7F6958CB93A865DD59D2C73D8CBF2BCD0E49FD3C68A4721056D93B74A5C8"
+    },
+    {
+      "path": "skin-previews/nahida.jpg",
+      "bytes": 25642,
+      "sha256": "1B5B562EACB0CF2F23046A6414E35E855A8FFDF0FF31F6C69D1FAF50E66792C3"
+    },
+    {
+      "path": "nahida-hit-atlas.png",
+      "bytes": 3232371,
+      "sha256": "B6C7BB954F9E08AC03E4E691A4057FBA5CB1A9DE30AABED4A5FEC23DB1286DBC"
+    },
+    {
+      "path": "hold/clover.png",
+      "bytes": 22183,
+      "sha256": "A703B34CB034130F7E58360DC6A3D780A31F74CB3A56DFB3FF6DCE57A0C7B031"
+    },
+    {
+      "path": "hold/ring.png",
+      "bytes": 21521,
+      "sha256": "C4DF29E72D6855094EC72786EAE045F661C9167AAE591BFB79F68988B3A236C0"
+    },
+    {
+      "path": "hold/star.png",
+      "bytes": 2680,
+      "sha256": "60B2B109D7B96C25FA707832BB332A1FAB2ADDF5213C1EB65CB82DB07B7D3021"
+    },
+    {
+      "path": "hold/glow.png",
+      "bytes": 4749,
+      "sha256": "11777861A3F0C6C3F7C52D298AD9C845641DDF1D1E63D9B7C602334FAE6FA5E7"
+    },
+    {
+      "path": "hold/dot.png",
+      "bytes": 4624,
+      "sha256": "CFBA511B0F5C65EBCAC1D2A517746D8B125E68FBA2CCDE621B3AE76AFF04C696"
+    }
+  ]
+}
