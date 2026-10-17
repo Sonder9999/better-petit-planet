@@ -1,3 +1,4 @@
+using System;
 using System.IO;
 using System.Threading.Tasks;
 using BetterPetitPlanet.GameTask.Music.Service;
@@ -81,14 +82,52 @@ public class PetitScoreParserTest
     }
 
     [Fact]
-    public async Task MusicLibraryService_ScanAndLoadScoresAsync_LoadsRealScores()
+    public async Task MusicLibraryService_ScanAndLoadScoresAsync_LoadsScoresFromDirectoryFixture()
     {
-        var parser = new PetitScoreParser();
-        var configService = new BetterPetitPlanet.Core.Config.ConfigService();
-        var library = new MusicLibraryService(parser, configService);
+        var tempDir = Path.Combine(Path.GetTempPath(), "BetterPetitPlanet_MusicFixture_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+        try
+        {
+            var guitarDir = Path.Combine(tempDir, "guitar");
+            var recorderDir = Path.Combine(tempDir, "recorder");
+            Directory.CreateDirectory(guitarDir);
+            Directory.CreateDirectory(recorderDir);
 
-        var scores = await library.ScanAndLoadScoresAsync(instrumentFilter: "全部乐器");
-        Assert.NotEmpty(scores);
-        Assert.True(scores.Count >= 60);
+            var guitarScore = SampleJson;
+            var recorderScore = SampleJson
+                .Replace("\"guitar\"", "\"recorder\"")
+                .Replace("测试乐曲", "竖笛测试乐曲");
+
+            await File.WriteAllTextAsync(Path.Combine(guitarDir, "test_guitar.json"), guitarScore);
+            await File.WriteAllTextAsync(Path.Combine(recorderDir, "test_recorder.json"), recorderScore);
+            await File.WriteAllTextAsync(Path.Combine(tempDir, "notes.txt"), "Synthetic test score notes");
+
+            var parser = new PetitScoreParser();
+            var configService = new BetterPetitPlanet.Core.Config.ConfigService();
+            var library = new MusicLibraryService(parser, configService);
+
+            var allScores = await library.ScanAndLoadScoresAsync(targetDir: tempDir, instrumentFilter: "全部乐器");
+            Assert.Equal(2, allScores.Count);
+
+            var guitarScores = await library.ScanAndLoadScoresAsync(targetDir: tempDir, instrumentFilter: "吉他");
+            Assert.Single(guitarScores);
+            Assert.Equal("测试乐曲", guitarScores[0].Metadata.Title);
+
+            var recorderScores = await library.ScanAndLoadScoresAsync(targetDir: tempDir, instrumentFilter: "竖笛");
+            Assert.Single(recorderScores);
+            Assert.Equal("竖笛测试乐曲", recorderScores[0].Metadata.Title);
+
+            // Test navigation
+            Assert.NotNull(library.SelectSong(0));
+            Assert.NotNull(library.GetNextSong());
+            Assert.NotNull(library.GetPreviousSong());
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+            {
+                Directory.Delete(tempDir, recursive: true);
+            }
+        }
     }
 }

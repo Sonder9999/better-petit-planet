@@ -19,13 +19,64 @@ public class MusicPlaybackSeekTest
         public void Reload() { }
     }
 
-    [Fact]
-    public void SeekNote_SetsCorrectNoteIndexAndPosition()
+    private sealed class Input : IMusicInputTransport
     {
-        var configService = new DummyConfigService();
-        var processDetector = new GameProcessDetector(configService);
-        var transports = new KeyInputTransports();
-        var playback = new MusicPlaybackService(configService, processDetector, transports);
+        public IReadOnlyList<MusicInputResult> Submit(IReadOnlyList<MusicKeyCommand> commands, IntPtr target, MusicInputMode mode)
+            => commands.Select(command => new MusicInputResult(command, true)).ToArray();
+    }
+
+    private static MusicPlaybackService Create()
+    {
+        var config = new DummyConfigService();
+        config.Config.Music.AutoFocusGameOnPlayback = false;
+        return new(config, new GameProcessDetector(config), new KeyInputTransports(),
+            clock: new MusicSessionClock(() => 0), inputTransport: new Input());
+    }
+
+    private static async Task<(int Note, int Total, double Position)> SeekAndObserve(
+        MusicPlaybackService playback, Action seek, double expectedPosition)
+    {
+        var changed = new TaskCompletionSource<(int, int, double)>(TaskCreationOptions.RunContinuationsAsynchronously);
+        void Observe(int note, int total, double position, double duration)
+        {
+            if (position == expectedPosition) changed.TrySetResult((note, total, position));
+        }
+        playback.NotePositionChanged += Observe;
+        try { seek(); return await changed.Task.WaitAsync(TimeSpan.FromSeconds(2)); }
+        finally { playback.NotePositionChanged -= Observe; }
+    }
+
+    [Fact]
+    public async Task SeekNote_SetsCorrectNoteIndexAndPosition()
+    {
+        using var playback = Create();
+
+        var timeline = new PerformanceTimeline
+        {
+            Metadata = new PetitSongMetadata { Title = "Test Song" },
+            TotalDurationMs = 10000,
+            Events = new List<PerformanceEvent>
+            {
+                new() { TimeMs = 1000, Key = "A" },
+                new() { TimeMs = 3000, Key = "S" },
+                new() { TimeMs = 5000, Key = "D" },
+                new() { TimeMs = 8000, Key = "F" },
+            }
+        };
+
+        playback.LoadTimeline(timeline);
+        Thread.Sleep(20);
+
+        var notified = await SeekAndObserve(playback, () => playback.SeekNote(2), 4);
+        Assert.Equal(2, notified.Note);
+        Assert.Equal(4, notified.Total);
+        Assert.Equal(4.0, notified.Position);
+    }
+
+    [Fact]
+    public async Task Seek_SetsCorrectPositionAndCalculatesEventIndex()
+    {
+        using var playback = Create();
 
         var timeline = new PerformanceTimeline
         {
@@ -42,67 +93,15 @@ public class MusicPlaybackSeekTest
 
         playback.LoadTimeline(timeline);
 
-        int notifiedNote = -1;
-        int notifiedTotal = -1;
-        double notifiedPos = -1;
-        playback.NotePositionChanged += (note, totalNotes, pos, _) =>
-        {
-            notifiedNote = note;
-            notifiedTotal = totalNotes;
-            notifiedPos = pos;
-        };
-
-        playback.SeekNote(2);
-
-        Assert.Equal(2, notifiedNote);
-        Assert.Equal(4, notifiedTotal);
-        Assert.Equal(4.0, notifiedPos);
+        var notified = await SeekAndObserve(playback, () => playback.Seek(4), 4);
+        Assert.Equal(4.0, notified.Position);
+        Assert.Equal(2, notified.Note);
     }
 
     [Fact]
-    public void Seek_SetsCorrectPositionAndCalculatesEventIndex()
+    public async Task Seek_WhilePaused_UpdatesPausedPosition()
     {
-        var configService = new DummyConfigService();
-        var processDetector = new GameProcessDetector(configService);
-        var transports = new KeyInputTransports();
-        var playback = new MusicPlaybackService(configService, processDetector, transports);
-
-        var timeline = new PerformanceTimeline
-        {
-            Metadata = new PetitSongMetadata { Title = "Test Song" },
-            TotalDurationMs = 10000,
-            Events = new List<PerformanceEvent>
-            {
-                new() { TimeMs = 1000, Key = "A" },
-                new() { TimeMs = 3000, Key = "S" },
-                new() { TimeMs = 5000, Key = "D" },
-                new() { TimeMs = 8000, Key = "F" },
-            }
-        };
-
-        playback.LoadTimeline(timeline);
-
-        double notifiedPos = -1;
-        double notifiedTotal = -1;
-        playback.PositionChanged += (pos, total) =>
-        {
-            notifiedPos = pos;
-            notifiedTotal = total;
-        };
-
-        // Seek to 4.0s (normalized note 2 is at 4.0s)
-        playback.Seek(4.0);
-
-        Assert.Equal(4.0, notifiedPos);
-    }
-
-    [Fact]
-    public void Seek_WhilePaused_UpdatesPausedPosition()
-    {
-        var configService = new DummyConfigService();
-        var processDetector = new GameProcessDetector(configService);
-        var transports = new KeyInputTransports();
-        var playback = new MusicPlaybackService(configService, processDetector, transports);
+        using var playback = Create();
 
         var timeline = new PerformanceTimeline
         {
@@ -120,23 +119,15 @@ public class MusicPlaybackSeekTest
         playback.Play();
         playback.Pause();
 
-        double notifiedPos = -1;
-        playback.PositionChanged += (pos, _) => notifiedPos = pos;
-
-        // Seek to 5.0s (normalized note 2 is at 5.0s)
-        playback.Seek(5.0);
-
-        Assert.Equal(5.0, notifiedPos);
+        var notified = await SeekAndObserve(playback, () => playback.Seek(5), 5);
+        Assert.Equal(5.0, notified.Position);
         Assert.Equal(PlayerState.Paused, playback.State);
     }
 
     [Fact]
-    public void Seek_ClampsOutOfBoundsCorrectly()
+    public async Task Seek_ClampsOutOfBoundsCorrectly()
     {
-        var configService = new DummyConfigService();
-        var processDetector = new GameProcessDetector(configService);
-        var transports = new KeyInputTransports();
-        var playback = new MusicPlaybackService(configService, processDetector, transports);
+        using var playback = Create();
 
         var timeline = new PerformanceTimeline
         {
@@ -151,20 +142,17 @@ public class MusicPlaybackSeekTest
 
         playback.LoadTimeline(timeline);
 
-        double notifiedPos = -1;
-        playback.PositionChanged += (pos, _) => notifiedPos = pos;
-
-        playback.Seek(-5.0);
-        Assert.Equal(0.0, notifiedPos);
-
-        playback.Seek(999.0);
-        Assert.Equal(4.0, notifiedPos);
+        var before = await SeekAndObserve(playback, () => playback.Seek(-5), 0);
+        Assert.Equal(0.0, before.Position);
+        var after = await SeekAndObserve(playback, () => playback.Seek(999), 4);
+        Assert.Equal(4.0, after.Position);
     }
 
-    [Fact]
+    [MusicDesktopInputFact]
     public void ForegroundGuard_BlocksSendKeyWhenGameIsNotForeground()
     {
         bool isForeground = false;
+        bool owned = false;
         HardwareInputSimulator.ForegroundGuard = () => isForeground;
 
         try
@@ -174,16 +162,17 @@ public class MusicPlaybackSeekTest
 
             isForeground = true;
             // When foreground, SendKey attempts Win32 SendInput (returns true)
-            bool sentWhenForeground = HardwareInputSimulator.SendKeyDown("A");
-            Assert.True(sentWhenForeground);
+            owned = HardwareInputSimulator.SendKeyDown("A");
+            Assert.True(owned);
         }
         finally
         {
+            if (owned) HardwareInputSimulator.SendKeyUp("A");
             HardwareInputSimulator.ForegroundGuard = null;
         }
     }
 
-    [Fact]
+    [MusicDesktopInputFact]
     public void ActivateGameWindow_BringsGameToForegroundIfRunning()
     {
         var configService = new DummyConfigService();

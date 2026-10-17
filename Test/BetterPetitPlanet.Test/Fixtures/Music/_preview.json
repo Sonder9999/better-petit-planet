@@ -1,0 +1,36 @@
+{
+  "buttonSequence": [
+    {
+      "button": "Left_Down",
+      "time": 2000,
+      "isLongPress": true,
+      "longPressTime": 800
+    },
+    {
+      "button": "Right_Down",
+      "time": 2000
+    },
+    {
+      "button": "Right_Left",
+      "time": 2300
+    },
+    {
+      "button": "Left_Right",
+      "time": 2455
+    },
+    {
+      "button": "Right_Right",
+      "time": 2455
+    },
+    {
+      "button": "Left_Left",
+      "time": 2550
+    },
+    {
+      "button": "Right_Down",
+      "time": 2585,
+      "isLongPress": true,
+      "longPressTime": 460
+    }
+  ]
+}

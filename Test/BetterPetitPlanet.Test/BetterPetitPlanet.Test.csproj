@@ -17,6 +17,9 @@
 
     <ItemGroup>
         <Using Include="Xunit"/>
+        <Content Include="Fixtures\Music\*.json" CopyToOutputDirectory="PreserveNewest" />
+        <Content Include="Fixtures\Music\*.png" CopyToOutputDirectory="PreserveNewest" />
+        <Content Include="Fixtures\Music\ReferenceSkins\*.png" CopyToOutputDirectory="PreserveNewest" />
     </ItemGroup>
 
     <ItemGroup>
