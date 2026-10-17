@@ -390,7 +390,7 @@ public partial class MusicPageViewModel : ObservableObject
 
     private void TryAutoFocusGame()
     {
-        if (AutoFocusGameOnPlayback && _processDetector != null)
+        if (AutoFocusGameOnPlayback && _processDetector != null && !_processDetector.IsGameForegroundCached())
         {
             _processDetector.ActivateGameWindow();
         }

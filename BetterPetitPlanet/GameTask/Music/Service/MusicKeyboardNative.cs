@@ -40,6 +40,20 @@ internal sealed class MusicKeyboardNative : IMusicKeyboardNative
             }
         }).ToArray();
         uint sent = User32.SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<User32.INPUT>());
+        for (int i = 0; i < Math.Min(sent, commands.Count); i++)
+        {
+            var command = commands[i];
+            var scancode = HardwareInputSimulator.GetScancode(command.Note.Key);
+            var vk = HardwareInputSimulator.GetVirtualKey(command.Note.Key);
+            if (command.IsDown)
+            {
+                HardwareInputSimulator.RecordKeyDown(scancode, vk);
+            }
+            else
+            {
+                HardwareInputSimulator.RecordKeyUp(scancode, vk);
+            }
+        }
         return new(sent, Marshal.GetLastWin32Error());
     }
 }

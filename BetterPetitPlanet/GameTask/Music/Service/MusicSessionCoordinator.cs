@@ -88,6 +88,17 @@ public sealed class MusicSessionCoordinator : IDisposable
         _input = inputObserver ?? new MusicInputObserver();
         _gate = new MusicReadinessGate(_options);
         _safety = new MusicReadinessCoordinator(_playback.SetReadiness, _input.Clear);
+
+        HardwareInputSimulator.PhysicalKeyGuard = (scancode, vk) =>
+        {
+            if (vk >= 'A' && vk <= 'Z')
+            {
+                string key = ((char)vk).ToString();
+                if (_input.IsPhysicalKeyDown(key)) return true;
+            }
+            return false;
+        };
+
         _starts = new MusicTimelineStartControl(_playback, WaitForReadinessAsync, () =>
         {
             Status = "无法开始：" + Status;
@@ -219,7 +230,10 @@ public sealed class MusicSessionCoordinator : IDisposable
     {
         cancellation.ThrowIfCancellationRequested();
         if (!_isCaptureRunning()) _capture.Start();
-        _process.ActivateGameWindow();
+        if (_config.Config.Music.AutoFocusGameOnPlayback && !_isGameForeground())
+        {
+            _process.ActivateGameWindow();
+        }
         Tick();
 
         double deadline = _clockNow() + _options.DetectionFreshnessMs * 2;
@@ -344,6 +358,9 @@ public sealed class MusicSessionCoordinator : IDisposable
         if (_disposed) return;
         CancelTimelineStart();
         Suspend("应用退出");
+
+        HardwareInputSimulator.PhysicalKeyGuard = null;
+        HardwareInputSimulator.ReleaseAllHeldKeys();
 
         _disposed = true;
         _lifetime.Cancel();
