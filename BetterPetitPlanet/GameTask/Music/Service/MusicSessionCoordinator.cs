@@ -42,7 +42,7 @@ public sealed class MusicSessionCoordinator : IDisposable
 
     public bool Ready => _safety.Ready;
     public bool Adjusting => _adjusting;
-    public string Status { get; private set; } = "等待竖笛";
+    public string Status { get; private set; } = "等待乐器";
     public MusicPlaybackService Playback => _playback;
     public MusicInputObserver InputObserver => _input;
     public MusicReadinessGate ReadinessGate => _gate;
@@ -107,7 +107,7 @@ public sealed class MusicSessionCoordinator : IDisposable
         if (_disposed || _started) return;
         _started = true;
 
-        _playback.SetReadiness(false, "等待新鲜截图与竖笛检测");
+        _playback.SetReadiness(false, "等待新鲜截图与乐器检测");
         _playback.ConfigurePreparation(_config.Config.Music.PreparationMs);
         _playback.SetAutomaticPlayback(_config.Config.Music.AutomaticPlaybackEnabled);
 
@@ -194,8 +194,10 @@ public sealed class MusicSessionCoordinator : IDisposable
 
     public void LoadTimeline(PerformanceTimeline timeline)
     {
+        ArgumentNullException.ThrowIfNull(timeline);
         CancelTimelineStart();
         _playback.Stop();
+        _gate.TargetInstrument = timeline.Metadata?.Instrument;
         _playback.LoadTimeline(timeline);
         Changed?.Invoke();
     }
@@ -302,7 +304,7 @@ public sealed class MusicSessionCoordinator : IDisposable
     private void OnDetection(InstrumentDetectionResult result)
     {
         double received = _clockNow();
-        Post(() => _gate.ObserveDetection(result.IsDetected, received, result.StatusSummary.Contains("异常")));
+        Post(() => _gate.ObserveDetection(result.IsDetected, received, result.InstrumentId, result.DisplayName, result.StatusSummary?.Contains("异常") ?? false));
     }
 
     private void OnSession(MusicSessionSnapshot snapshot) => Post(() =>

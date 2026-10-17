@@ -52,16 +52,23 @@ public sealed class MusicLibraryService
                 if (timeline == null) continue;
 
                 // Instrument filter
-                if (instrumentFilter != "全部乐器")
+                if (!string.IsNullOrWhiteSpace(instrumentFilter) && instrumentFilter != "全部乐器")
                 {
-                    bool matchGuitar = instrumentFilter == "吉他" &&
-                        (timeline.Metadata.Instrument.Contains("guitar", StringComparison.OrdinalIgnoreCase) ||
-                         file.Contains("guitar", StringComparison.OrdinalIgnoreCase));
-                    bool matchRecorder = instrumentFilter == "竖笛" &&
-                        (timeline.Metadata.Instrument.Contains("recorder", StringComparison.OrdinalIgnoreCase) ||
-                         file.Contains("recorder", StringComparison.OrdinalIgnoreCase));
+                    bool matched = false;
+                    if (BetterPetitPlanet.GameTask.Music.Instrument.InstrumentRegistry.Default.TryGetProfile(instrumentFilter, out var targetProfile) && targetProfile != null)
+                    {
+                        var aliases = targetProfile.Aliases.Append(targetProfile.Id).Append(targetProfile.DisplayName);
+                        matched = aliases.Any(a =>
+                            (!string.IsNullOrEmpty(timeline.Metadata?.Instrument) && timeline.Metadata.Instrument.Contains(a, StringComparison.OrdinalIgnoreCase)) ||
+                            file.Contains(a, StringComparison.OrdinalIgnoreCase));
+                    }
+                    else
+                    {
+                        matched = (!string.IsNullOrEmpty(timeline.Metadata?.Instrument) && timeline.Metadata.Instrument.Contains(instrumentFilter, StringComparison.OrdinalIgnoreCase)) ||
+                                  file.Contains(instrumentFilter, StringComparison.OrdinalIgnoreCase);
+                    }
 
-                    if (!matchGuitar && !matchRecorder) continue;
+                    if (!matched) continue;
                 }
 
                 _cachedScores.Add(timeline);

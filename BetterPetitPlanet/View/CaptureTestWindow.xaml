@@ -120,7 +120,7 @@
                                    FontSize="12"
                                    FontWeight="SemiBold"
                                    Foreground="#888888"
-                                   Text="竖笛: 检测中..." />
+                                   Text="乐器: 检测中..." />
                     </Border>
                 </StackPanel>
 

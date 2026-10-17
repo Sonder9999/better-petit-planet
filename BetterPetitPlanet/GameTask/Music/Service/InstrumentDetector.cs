@@ -1,10 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using BetterPetitPlanet.GameTask.Music.Rendering;
+using System.Linq;
 using BetterPetitPlanet.Core.Config;
-using BetterPetitPlanet.GameTask.AutoPick.Ocr;
 using BetterPetitPlanet.GameCapture;
+using BetterPetitPlanet.GameTask.AutoPick.Ocr;
+using BetterPetitPlanet.GameTask.Music.Instrument;
+using BetterPetitPlanet.GameTask.Music.Rendering;
 using Microsoft.Extensions.Logging;
 using OpenCvSharp;
 using Vanara.PInvoke;
@@ -12,8 +14,9 @@ using Vanara.PInvoke;
 namespace BetterPetitPlanet.GameTask.Music.Service;
 
 /// <summary>
-/// 竖笛等乐器演奏界面自动识别器。
-/// 基于 OCR 文字识别与原生小块标注图像模板双引擎对比，高精准低开销识别游戏是否处于乐器弹奏状态。
+/// 多乐器（竖笛、吉他等）演奏界面自动识别器。
+/// 基于分阶段短路算法（Stage 1 按键初筛 -> Stage 2 乐器专属视觉特征验证 -> Stage 3 OCR 兜底复核），
+/// 实现低开销、高精度的乐器就绪判定。
 /// </summary>
 public sealed class InstrumentDetector : IDisposable
 {
@@ -21,17 +24,27 @@ public sealed class InstrumentDetector : IDisposable
     private readonly IOcrEngine? _ocrEngine;
     private readonly bool _ownsOcrEngine;
     private readonly ILogger<InstrumentDetector>? _logger;
+    private readonly IInstrumentRegistry _registry;
     private readonly object _syncLock = new();
 
-    private readonly Dictionary<string, Mat> _targetTemplates = [];
+    private readonly Dictionary<string, Mat> _keyTemplates = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, Dictionary<string, Mat>> _exclusiveTemplates = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, Mat> _targetTemplates = new(StringComparer.OrdinalIgnoreCase);
     private Mat? _legacyTemplateMat;
     private bool _isInitialized;
 
+    private long _lastEffectiveSequence;
     private DateTime _lastDetectionTime = DateTime.MinValue;
 
     public const double DefaultThreshold = 0.65;
+    public const double KeyAnchorThreshold = 0.58;
+    public const double FeatureThreshold = 0.58;
+    public const double FeatureMarginThreshold = 0.15;
 
-    public bool IsTemplateLoaded => _targetTemplates.Count > 0 || (_legacyTemplateMat != null && !_legacyTemplateMat.Empty());
+    public bool IsTemplateLoaded =>
+        _keyTemplates.Count > 0 ||
+        _targetTemplates.Count > 0 ||
+        (_legacyTemplateMat != null && !_legacyTemplateMat.Empty());
 
     /// <summary>
     /// 最新的全局检测结果（全局单例状态源，确保各窗口与主界面绝对同步）
@@ -39,17 +52,19 @@ public sealed class InstrumentDetector : IDisposable
     public InstrumentDetectionResult? LatestResult { get; private set; }
 
     /// <summary>
-    /// 全局状态同步更新事件
+    /// 全局状态同步更新事件（保证在同步锁外安全派发，绝不引发死锁）
     /// </summary>
     public event Action<InstrumentDetectionResult>? DetectionUpdated;
 
     public InstrumentDetector(
         IConfigService? configService = null,
         IOcrEngine? ocrEngine = null,
-        ILogger<InstrumentDetector>? logger = null)
+        ILogger<InstrumentDetector>? logger = null,
+        IInstrumentRegistry? registry = null)
     {
         _configService = configService;
         _logger = logger;
+        _registry = registry ?? InstrumentRegistry.Default;
 
         if (ocrEngine != null)
         {
@@ -73,165 +88,459 @@ public sealed class InstrumentDetector : IDisposable
         InitializeTemplates();
     }
 
-    private void InitializeTemplates(string instrumentName = "Recorder")
+    private void InitializeTemplates()
     {
         lock (_syncLock)
         {
             if (_isInitialized) return;
 
-            var baseDirs = new[]
+            // 1. 加载 common 按键锚点模板 (key_A, key_L 等)
+            var commonAnchors = InstrumentRegistry.CreateCommonKeyAnchors();
+            foreach (var anchor in commonAnchors)
             {
-                Path.Combine(AppContext.BaseDirectory, "Assets", "Instruments", instrumentName, "targets"),
-                Path.Combine(AppContext.BaseDirectory, "Assets", "Instruments", instrumentName),
-                Path.Combine(AppContext.BaseDirectory, "Assets", "Instruments", "Recorder", "targets"),
-                Path.Combine(AppContext.BaseDirectory, "Assets", "Instruments", "targets"),
-                Path.Combine(AppContext.BaseDirectory, "Assets", "Instruments"),
-                Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "Assets", "Instruments", instrumentName, "targets")),
-                Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "Assets", "Instruments", instrumentName)),
-                Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "Assets", "Instruments", "Recorder", "targets")),
-            };
-
-            // 加载 21 个原生小块目标模板 (Numbers, Syllables, Keys)
-            var allTargets = new List<InstrumentTarget>();
-            allTargets.AddRange(InstrumentTargets.Numbers);
-            allTargets.AddRange(InstrumentTargets.Syllables);
-            allTargets.AddRange(InstrumentTargets.Keys);
-
-            foreach (var target in allTargets)
-            {
-                string fileName = $"{target.Name}.png";
-                foreach (var dir in baseDirs)
+                var filePath = _registry.ResolveTargetFilePath("common", anchor.TemplateFileName) ??
+                               _registry.ResolveTargetFilePath("Recorder", anchor.TemplateFileName);
+                if (filePath != null && File.Exists(filePath))
                 {
-                    string filePath = Path.Combine(dir, fileName);
-                    if (File.Exists(filePath))
+                    try
+                    {
+                        var mat = Cv2.ImRead(filePath, ImreadModes.Color);
+                        if (!mat.Empty())
+                        {
+                            _keyTemplates[anchor.Name] = mat;
+                            _targetTemplates[anchor.Name] = mat;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger?.LogWarning(ex, "Failed to load common key template: {Path}", filePath);
+                    }
+                }
+            }
+
+            // 2. 加载各已注册乐器的专属特征模板 (Guitar 和 Recorder)
+            var profiles = _registry.GetAllProfiles();
+            foreach (var profile in profiles)
+            {
+                var instrumentDict = new Dictionary<string, Mat>(StringComparer.OrdinalIgnoreCase);
+                _exclusiveTemplates[profile.Id] = instrumentDict;
+
+                foreach (var target in profile.ExclusiveTargets)
+                {
+                    var filePath = _registry.ResolveTargetFilePath(profile.Id, target.TemplateFileName);
+                    if (filePath != null && File.Exists(filePath))
                     {
                         try
                         {
                             var mat = Cv2.ImRead(filePath, ImreadModes.Color);
                             if (!mat.Empty())
                             {
+                                instrumentDict[target.Name] = mat;
                                 _targetTemplates[target.Name] = mat;
-                                break;
                             }
                         }
                         catch (Exception ex)
                         {
-                            _logger?.LogWarning(ex, "Failed to load target template: {File}", filePath);
+                            _logger?.LogWarning(ex, "Failed to load exclusive template for {Instrument}: {Path}", profile.Id, filePath);
                         }
                     }
                 }
-            }
 
-            _logger?.LogInformation("InstrumentDetector loaded {Count}/{Total} small target templates for {Instrument}.",
-                _targetTemplates.Count, allTargets.Count, instrumentName);
-
-            // 兼容性大底模板
-            var legacyCandidates = new[]
-            {
-                Path.Combine(AppContext.BaseDirectory, "Assets", "Instruments", instrumentName, "template.png"),
-                Path.Combine(AppContext.BaseDirectory, "Assets", "Instruments", "Recorder", "template.png"),
-                Path.Combine(AppContext.BaseDirectory, "Assets", "Instruments", "recorder_template.png"),
-                Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "Assets", "Instruments", instrumentName, "template.png")),
-                Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "Assets", "Instruments", "Recorder", "template.png")),
-            };
-
-            foreach (var path in legacyCandidates)
-            {
-                if (File.Exists(path))
+                // 大底模板（主要针对 Recorder 保留兼容）
+                if (profile.Id.Equals("Recorder", StringComparison.OrdinalIgnoreCase) && _legacyTemplateMat == null)
                 {
-                    try
+                    var tmplPath = _registry.ResolveTemplatePath(profile.Id);
+                    if (tmplPath != null && File.Exists(tmplPath))
                     {
-                        var mat = Cv2.ImRead(path, ImreadModes.Color);
-                        if (!mat.Empty())
+                        try
                         {
-                            _legacyTemplateMat = mat;
-                            break;
+                            var mat = Cv2.ImRead(tmplPath, ImreadModes.Color);
+                            if (!mat.Empty())
+                            {
+                                _legacyTemplateMat = mat;
+                            }
                         }
+                        catch { }
                     }
-                    catch { }
                 }
             }
+
+            _logger?.LogInformation(
+                "InstrumentDetector initialized. Key templates: {Keys}, Exclusive: {ExclusiveInstruments}, Total: {Total}",
+                _keyTemplates.Count, _exclusiveTemplates.Count, _targetTemplates.Count);
 
             _isInitialized = true;
         }
     }
 
     /// <summary>
-    /// 竖笛界面检测核心方法：纯 OCR 识别 7 个数字与 7 个唱名。
-    /// 根据指令目前已禁用图像模板对比，纯由实时 OCR 识别判定，毫秒级响应。
+    /// 多乐器界面分阶段检测核心方法。
+    /// 支持全帧画面或 ROI 子图识别，通过锁外通知彻底消除死锁隐患。
     /// </summary>
-    public InstrumentDetectionResult DetectFull(Mat? frame)
+    public InstrumentDetectionResult DetectFull(
+        Mat? frame,
+        int roiOffsetX = 0,
+        int roiOffsetY = 0,
+        int fullWidth = 0,
+        int fullHeight = 0,
+        long sequence = 0)
     {
-        var result = new InstrumentDetectionResult();
-        if (frame == null || frame.Empty())
-        {
-            result.StatusSummary = "竖笛: 未检测 (画面为空)";
-            UpdateLatestResult(result);
-            return result;
-        }
+        InstrumentDetectionResult result;
+        bool shouldNotify = false;
 
-        long diagnosticLock = MusicOverlayDiagnostics.Timestamp();
         lock (_syncLock)
         {
-            MusicOverlayDiagnostics.Elapsed(MusicOverlayDiagnostics.Metric.OcrDetectorLockWaitMs, diagnosticLock);
+            result = DetectAlgorithm(frame, roiOffsetX, roiOffsetY, fullWidth, fullHeight);
+
+            // 乱序防护：若显式提供了 sequence (> 0)，且早于当前已生效序号，则安全丢弃状态更新
+            if (sequence > 0 && sequence < _lastEffectiveSequence)
+            {
+                _logger?.LogDebug("Discarding out-of-order detection in InstrumentDetector: sequence {Seq} < {Latest}", sequence, _lastEffectiveSequence);
+                return result;
+            }
+
+            if (sequence > 0)
+            {
+                _lastEffectiveSequence = sequence;
+            }
+
+            LatestResult = result;
+            _lastDetectionTime = DateTime.UtcNow;
+            shouldNotify = true;
+        }
+
+        // 致命隐患修复：DetectionUpdated 事件通知移到锁外执行，杜绝外部订阅者导致双向死锁
+        if (shouldNotify)
+        {
             try
             {
-                // 1. OCR 识别（重点检测 7 个数字 1~7 及 唱名 do~ti，共 14 项原生小目标）
-                DetectOcr(frame, out double ocrConfidence, out int ocrHits, out int ocrTotal);
-                result.OcrConfidence = ocrConfidence;
-                result.OcrHits = ocrHits;
-                result.OcrTotal = ocrTotal;
-
-                // 2. 图像识别对比按要求暂时禁用，仅保留指标为 0
-                result.TemplateConfidence = 0.0;
-                result.TemplateHits = 0;
-                result.TemplateTotal = 0;
-
-                // 3. 判定标准：OCR 识别命中率 >= 35% 即判定为已就绪 (就绪时实测 90%~100%，未拿出时 0%)
-                result.IsDetected = ocrConfidence >= 0.35;
-                result.CombinedConfidence = ocrConfidence;
-                result.Details = $"OCR: {ocrConfidence:P0} ({ocrHits}/{ocrTotal})";
-
-                string stateText = result.IsDetected ? "已就绪" : "未拿出";
-                result.StatusSummary = $"竖笛: {stateText} (OCR: {ocrConfidence:P0})";
-
-                _lastDetectionTime = DateTime.Now;
-                UpdateLatestResult(result);
-                return result;
+                using var diagnostic = MusicOverlayDiagnostics.Measure(MusicOverlayDiagnostics.Metric.OcrNotifyMs);
+                DetectionUpdated?.Invoke(result);
             }
             catch (Exception ex)
             {
-                _logger?.LogWarning(ex, "Exception during pure OCR instrument detection");
-                result.StatusSummary = "竖笛: 检测异常";
-                UpdateLatestResult(result);
-                return result;
+                _logger?.LogWarning(ex, "Exception in DetectionUpdated event handlers");
             }
         }
+
+        return result;
     }
 
-    /// <summary>
-    /// 先 OCR 识别逻辑：提取数字与唱名区域进行文字识别对比 (优化分级识别，降低开销)
-    /// </summary>
-    private void DetectOcr(Mat frame, out double confidence, out int hits, out int total)
+    private InstrumentDetectionResult DetectAlgorithm(
+        Mat? frame,
+        int roiOffsetX,
+        int roiOffsetY,
+        int fullWidth,
+        int fullHeight)
     {
-        using var diagnostic = MusicOverlayDiagnostics.Measure(MusicOverlayDiagnostics.Metric.OcrRecognitionMs);
-        hits = 0;
-        total = InstrumentTargets.Numbers.Length;
+        if (frame == null || frame.Empty())
+        {
+            return new InstrumentDetectionResult
+            {
+                IsDetected = false,
+                State = InstrumentDetectionState.None,
+                Stage = "None",
+                OcrInvoked = false,
+                StatusSummary = "未检测到乐器",
+                Message = "画面为空"
+            };
+        }
+
+        // 尺寸与 ROI 换算：若未指定 fullWidth/fullHeight，根据当前帧纵横比自动推断是否已是 ROI 子图
+        if (fullWidth <= 0 || fullHeight <= 0)
+        {
+            // 2560x1440 下 ROI 外接矩形约 1550x250 (纵横比 6.2:1)；全画幅纵横比通常为 16:9 (1.78:1)
+            if (frame.Width / (double)frame.Height >= 3.5)
+            {
+                double roiScale = frame.Width / 1550.0;
+                fullWidth = (int)Math.Round(2560.0 * roiScale);
+                fullHeight = (int)Math.Round(1440.0 * roiScale);
+                roiOffsetX = (int)Math.Round(500.0 * roiScale);
+                roiOffsetY = (int)Math.Round(1100.0 * roiScale);
+            }
+            else
+            {
+                fullWidth = frame.Width;
+                fullHeight = frame.Height;
+                roiOffsetX = 0;
+                roiOffsetY = 0;
+            }
+        }
+
+        double scaleX = fullWidth / 2560.0;
+        double scaleY = fullHeight / 1440.0;
+
+        // 若模板因故未加载，自动退化至纯 OCR 识别（向下兼容）
+        if (!IsTemplateLoaded)
+        {
+            return DetectPureOcrFallback(frame, scaleX, scaleY, roiOffsetX, roiOffsetY);
+        }
+
+        // =========================================================================
+        // Stage 1: 按键快速初筛短路 (KeyAnchor Fast Filter)
+        // =========================================================================
+        // 检查 key_A (2560x1440 下原生位置 574, 1272, 48, 38)
+        double scoreA = MatchKeyTemplate(frame, "key_A", 574, 1272, 48, 38, scaleX, scaleY, roiOffsetX, roiOffsetY);
+        if (scoreA < KeyAnchorThreshold)
+        {
+            return new InstrumentDetectionResult
+            {
+                IsDetected = false,
+                State = InstrumentDetectionState.None,
+                Stage = "KeyAnchor",
+                OcrInvoked = false,
+                TemplateConfidence = scoreA,
+                CombinedConfidence = scoreA,
+                StatusSummary = "未检测到乐器",
+                Details = $"key_A 未匹配 ({scoreA:P0} < {KeyAnchorThreshold:P0})"
+            };
+        }
+
+        // key_A 命中，继续检查 key_L (原生位置 1936, 1272, 48, 38)
+        double scoreL = MatchKeyTemplate(frame, "key_L", 1936, 1272, 48, 38, scaleX, scaleY, roiOffsetX, roiOffsetY);
+        if (scoreL < KeyAnchorThreshold)
+        {
+            return new InstrumentDetectionResult
+            {
+                IsDetected = false,
+                State = InstrumentDetectionState.None,
+                Stage = "KeyAnchor",
+                OcrInvoked = false,
+                TemplateConfidence = (scoreA + scoreL) / 2.0,
+                CombinedConfidence = (scoreA + scoreL) / 2.0,
+                StatusSummary = "未检测到乐器",
+                Details = $"key_L 未匹配 ({scoreL:P0} < {KeyAnchorThreshold:P0})"
+            };
+        }
+
+        // key_A 与 key_L 均命中，确认 7 键演奏界面存在，进入 Stage 2
+        double keyAvgConfidence = (scoreA + scoreL) / 2.0;
+
+        // =========================================================================
+        // Stage 2: 乐器专属视觉特征验证 (Feature Verification - 配置驱动多乐器评估)
+        // =========================================================================
+        var profiles = _registry.GetAllProfiles().ToList();
+        var candidateResults = new List<(InstrumentProfile Profile, double AvgScore, int Hits, int Total, string Detail)>();
+
+        foreach (var profile in profiles)
+        {
+            var anchors = profile.VerificationAnchors.Count > 0
+                ? profile.VerificationAnchors
+                : (profile.ExclusiveTargets.Count >= 2
+                    ? new[] { profile.ExclusiveTargets[0], profile.ExclusiveTargets[profile.ExclusiveTargets.Count - 1] }
+                    : profile.ExclusiveTargets);
+
+            if (anchors.Count == 0) continue;
+
+            double sumScore = 0.0;
+            int hits = 0;
+            var details = new List<string>();
+
+            foreach (var anchor in anchors)
+            {
+                double score = MatchInstrumentTemplate(
+                    frame,
+                    profile.Id,
+                    anchor.Name,
+                    anchor.Bounds.X,
+                    anchor.Bounds.Y,
+                    anchor.Bounds.Width,
+                    anchor.Bounds.Height,
+                    scaleX,
+                    scaleY,
+                    roiOffsetX,
+                    roiOffsetY);
+
+                sumScore += score;
+                if (score >= FeatureThreshold) hits++;
+                details.Add($"{anchor.Name}={score:P0}");
+            }
+
+            double avgScore = sumScore / anchors.Count;
+            candidateResults.Add((profile, avgScore, hits, anchors.Count, string.Join(", ", details)));
+        }
+
+        var sortedCandidates = candidateResults.OrderByDescending(c => c.AvgScore).ToList();
+
+        if (sortedCandidates.Count > 0 && sortedCandidates[0].AvgScore >= FeatureThreshold)
+        {
+            var best = sortedCandidates[0];
+            double secondScore = sortedCandidates.Count > 1 ? sortedCandidates[1].AvgScore : 0.0;
+
+            if (best.AvgScore - secondScore >= FeatureMarginThreshold)
+            {
+                return new InstrumentDetectionResult
+                {
+                    IsDetected = true,
+                    State = InstrumentDetectionState.Confirmed,
+                    InstrumentId = best.Profile.Id,
+                    DisplayName = best.Profile.DisplayName,
+                    Stage = "FeatureVerification",
+                    OcrInvoked = false,
+                    TemplateConfidence = best.AvgScore,
+                    TemplateHits = best.Hits,
+                    TemplateTotal = best.Total,
+                    CombinedConfidence = best.AvgScore,
+                    StatusSummary = $"{best.Profile.DisplayName}: 已就绪 (模板: {best.AvgScore:P0})",
+                    Details = $"{best.Profile.DisplayName}特征确认 ({best.Detail}, 均值={best.AvgScore:P0}; 次优均值={secondScore:P0})"
+                };
+            }
+        }
+
+        // =========================================================================
+        // Stage 3: OCR 兜底复核 (OCR Fallback - 仅当模板匹配存疑/接近时介入)
+        // =========================================================================
+        double maxTmplScore = sortedCandidates.Count > 0 ? sortedCandidates[0].AvgScore : 0.0;
+        string profilesSummary = string.Join("; ", sortedCandidates.Select(c => $"{c.Profile.DisplayName}均值={c.AvgScore:P0}"));
 
         if (_ocrEngine == null || !_ocrEngine.IsAvailable)
         {
-            confidence = 0.0;
-            return;
+            return new InstrumentDetectionResult
+            {
+                IsDetected = false,
+                State = InstrumentDetectionState.Ambiguous,
+                InstrumentId = null,
+                DisplayName = null,
+                Stage = "OcrFallback",
+                OcrInvoked = false,
+                TemplateConfidence = maxTmplScore,
+                CombinedConfidence = maxTmplScore,
+                StatusSummary = "乐器识别存疑",
+                Details = $"模板匹配存疑且 OCR 引擎不可用 ({profilesSummary})",
+                Message = "OCR engine unavailable for fallback verification"
+            };
         }
 
-        double scaleX = frame.Width / (double)InstrumentTargets.BaseWidth;
-        double scaleY = frame.Height / (double)InstrumentTargets.BaseHeight;
+        return ExecuteOcrFallback(frame, scaleX, scaleY, roiOffsetX, roiOffsetY, profiles, sortedCandidates);
+    }
 
-        // 1. 优先检测 7 个数字 (1~7)
+    private InstrumentDetectionResult ExecuteOcrFallback(
+        Mat frame,
+        double scaleX,
+        double scaleY,
+        int roiOffsetX,
+        int roiOffsetY,
+        IReadOnlyList<InstrumentProfile> profiles,
+        IReadOnlyList<(InstrumentProfile Profile, double AvgScore, int Hits, int Total, string Detail)> tmplCandidates)
+    {
+        using var diagnostic = MusicOverlayDiagnostics.Measure(MusicOverlayDiagnostics.Metric.OcrRecognitionMs);
+
+        // 7 个按键上方文本标注区域 (涵盖和弦/数字与唱名)
+        // 2560x1440 原生标注区间：Y 1145~1255，高约 110
+        var keyRegions = new (int X, int Y, int W, int H)[]
+        {
+            (565, 1145, 65, 110),
+            (760, 1145, 130, 110),
+            (990, 1145, 125, 110),
+            (1240, 1145, 75, 110),
+            (1470, 1145, 75, 110),
+            (1670, 1145, 130, 110),
+            (1910, 1145, 110, 110),
+        };
+
+        var profileHits = profiles.ToDictionary(p => p.Id, p => 0, StringComparer.OrdinalIgnoreCase);
+
+        for (int i = 0; i < keyRegions.Length; i++)
+        {
+            var reg = keyRegions[i];
+            if (TryCropRegion(frame, reg.X, reg.Y, reg.W, reg.H, scaleX, scaleY, roiOffsetX, roiOffsetY, out var cropMat))
+            {
+                using (cropMat)
+                {
+                    string text = _ocrEngine!.Recognize(cropMat).Trim();
+                    if (string.IsNullOrEmpty(text)) continue;
+
+                    foreach (var profile in profiles)
+                    {
+                        bool matched = profile.ExclusiveTargets.Any(t =>
+                            !string.IsNullOrEmpty(t.ExpectedText) &&
+                            (text.Equals(t.ExpectedText, StringComparison.OrdinalIgnoreCase) ||
+                             text.Contains(t.ExpectedText, StringComparison.OrdinalIgnoreCase)));
+
+                        if (matched)
+                        {
+                            profileHits[profile.Id]++;
+                        }
+                    }
+                }
+            }
+        }
+
+        var rankedProfiles = profiles
+            .Select(p => (Profile: p, Hits: profileHits.TryGetValue(p.Id, out int h) ? h : 0))
+            .OrderByDescending(p => p.Hits)
+            .ToList();
+
+        if (rankedProfiles.Count > 0 && rankedProfiles[0].Hits >= 2)
+        {
+            var best = rankedProfiles[0];
+            int secondHits = rankedProfiles.Count > 1 ? rankedProfiles[1].Hits : 0;
+
+            if (best.Hits > secondHits)
+            {
+                double ocrConf = (double)best.Hits / (double)keyRegions.Length;
+                double tmplScore = tmplCandidates.FirstOrDefault(c => c.Profile.Id.Equals(best.Profile.Id, StringComparison.OrdinalIgnoreCase)).AvgScore;
+
+                return new InstrumentDetectionResult
+                {
+                    IsDetected = true,
+                    State = InstrumentDetectionState.Confirmed,
+                    InstrumentId = best.Profile.Id,
+                    DisplayName = best.Profile.DisplayName,
+                    Stage = "OcrFallback",
+                    OcrInvoked = true,
+                    OcrConfidence = ocrConf,
+                    OcrHits = best.Hits,
+                    OcrTotal = keyRegions.Length,
+                    TemplateConfidence = tmplScore,
+                    CombinedConfidence = ocrConf,
+                    StatusSummary = $"{best.Profile.DisplayName}: 已就绪 (OCR: {ocrConf:P0})",
+                    Details = $"OCR 复核判定为{best.Profile.DisplayName} (命中数={best.Hits}, 次优命中数={secondHits})"
+                };
+            }
+        }
+
+        string ocrSummary = string.Join(", ", rankedProfiles.Select(p => $"{p.Profile.DisplayName}命中={p.Hits}"));
+        return new InstrumentDetectionResult
+        {
+            IsDetected = false,
+            State = InstrumentDetectionState.Ambiguous,
+            InstrumentId = null,
+            DisplayName = null,
+            Stage = "OcrFallback",
+            OcrInvoked = true,
+            OcrConfidence = 0.0,
+            CombinedConfidence = 0.0,
+            StatusSummary = "乐器识别存疑",
+            Details = $"OCR 识别无法明确区分乐器 ({ocrSummary})",
+            Message = "无法区分乐器"
+        };
+    }
+
+    private InstrumentDetectionResult DetectPureOcrFallback(
+        Mat frame,
+        double scaleX,
+        double scaleY,
+        int roiOffsetX,
+        int roiOffsetY)
+    {
+        if (_ocrEngine == null || !_ocrEngine.IsAvailable)
+        {
+            return new InstrumentDetectionResult
+            {
+                IsDetected = false,
+                State = InstrumentDetectionState.None,
+                Stage = "OcrFallback",
+                OcrInvoked = false,
+                StatusSummary = "未检测到乐器",
+                Message = "OCR engine unavailable and templates not loaded"
+            };
+        }
+
         int numberHits = 0;
         foreach (var target in InstrumentTargets.Numbers)
         {
-            if (TryCropTarget(frame, target, scaleX, scaleY, out var cropMat))
+            if (TryCropRegion(frame, target.X, target.Y, target.Width, target.Height, scaleX, scaleY, roiOffsetX, roiOffsetY, out var cropMat))
             {
                 using (cropMat)
                 {
@@ -245,176 +554,198 @@ public sealed class InstrumentDetector : IDisposable
             }
         }
 
-        // 若数字命中已达 3 个以上，已可明确判定为竖笛已拿出，无需额外耗费开销去识别唱名
-        if (numberHits >= 3)
-        {
-            hits = numberHits;
-            total = InstrumentTargets.Numbers.Length;
-            confidence = (double)numberHits / total;
-            return;
-        }
+        int total = InstrumentTargets.Numbers.Length;
+        double ocrConf = total > 0 ? (double)numberHits / total : 0.0;
+        bool isDetected = ocrConf >= 0.35;
 
-        // 若数字命中为 0，基本判定未拿出竖笛，无需识别唱名
-        if (numberHits == 0)
+        return new InstrumentDetectionResult
         {
-            hits = 0;
-            total = InstrumentTargets.Numbers.Length;
-            confidence = 0.0;
-            return;
-        }
-
-        // 2. 若处于边缘状态 (1~2 个数字)，进一步识别唱名进行双重验证
-        int syllableHits = 0;
-        foreach (var target in InstrumentTargets.Syllables)
-        {
-            if (TryCropTarget(frame, target, scaleX, scaleY, out var cropMat))
-            {
-                using (cropMat)
-                {
-                    string text = _ocrEngine.Recognize(cropMat).Trim().ToLowerInvariant();
-                    if (text.Equals(target.ExpectedText, StringComparison.OrdinalIgnoreCase) ||
-                        text.Contains(target.ExpectedText, StringComparison.OrdinalIgnoreCase))
-                    {
-                        syllableHits++;
-                    }
-                }
-            }
-        }
-
-        hits = numberHits + syllableHits;
-        total = InstrumentTargets.Numbers.Length + InstrumentTargets.Syllables.Length;
-        confidence = total > 0 ? (double)hits / total : 0.0;
+            IsDetected = isDetected,
+            State = isDetected ? InstrumentDetectionState.Confirmed : InstrumentDetectionState.None,
+            InstrumentId = isDetected ? "Recorder" : null,
+            DisplayName = isDetected ? "竖笛" : null,
+            Stage = "OcrFallback",
+            OcrInvoked = true,
+            OcrConfidence = ocrConf,
+            OcrHits = numberHits,
+            OcrTotal = total,
+            NumberConfidence = ocrConf,
+            NumberHits = numberHits,
+            CombinedConfidence = ocrConf,
+            Details = $"Pure OCR: {ocrConf:P0} ({numberHits}/{total})",
+            StatusSummary = isDetected ? $"竖笛: 已就绪 (OCR: {ocrConf:P0})" : "未检测到乐器"
+        };
     }
 
-    /// <summary>
-    /// 同时小块图像对比逻辑：将 7 个按键数字及唱名与原生标注模板分别做相关性匹配
-    /// </summary>
-    private void DetectSmallTemplates(Mat frame, out double confidence, out int hits, out int total)
+    private double MatchKeyTemplate(
+        Mat frame,
+        string anchorName,
+        int baseX,
+        int baseY,
+        int baseW,
+        int baseH,
+        double scaleX,
+        double scaleY,
+        int roiOffsetX,
+        int roiOffsetY)
     {
-        hits = 0;
-        total = 0;
-        double totalScore = 0.0;
-
-        double scaleX = frame.Width / (double)InstrumentTargets.BaseWidth;
-        double scaleY = frame.Height / (double)InstrumentTargets.BaseHeight;
-
-        // 对比 Numbers
-        foreach (var target in InstrumentTargets.Numbers)
+        if (_keyTemplates.TryGetValue(anchorName, out var tmplMat))
         {
-            if (_targetTemplates.TryGetValue(target.Name, out var tmplMat))
-            {
-                total++;
-                if (TryCropTarget(frame, target, scaleX, scaleY, out var cropMat))
-                {
-                    using (cropMat)
-                    {
-                        double score = MatchSmallCrop(cropMat, tmplMat);
-                        totalScore += Math.Max(0.0, score);
-                        if (score >= 0.70)
-                        {
-                            hits++;
-                        }
-                    }
-                }
-            }
+            return MatchTemplateInFrame(frame, tmplMat, baseX, baseY, baseW, baseH, scaleX, scaleY, roiOffsetX, roiOffsetY);
         }
 
-        // 对比 Syllables
-        foreach (var target in InstrumentTargets.Syllables)
+        if (_targetTemplates.TryGetValue(anchorName, out tmplMat))
         {
-            if (_targetTemplates.TryGetValue(target.Name, out var tmplMat))
-            {
-                total++;
-                if (TryCropTarget(frame, target, scaleX, scaleY, out var cropMat))
-                {
-                    using (cropMat)
-                    {
-                        double score = MatchSmallCrop(cropMat, tmplMat);
-                        totalScore += Math.Max(0.0, score);
-                        if (score >= 0.70)
-                        {
-                            hits++;
-                        }
-                    }
-                }
-            }
+            return MatchTemplateInFrame(frame, tmplMat, baseX, baseY, baseW, baseH, scaleX, scaleY, roiOffsetX, roiOffsetY);
         }
 
-        // 如果小模板未加载，回退到历史整块匹配
-        if (total == 0 && _legacyTemplateMat != null && !_legacyTemplateMat.Empty())
+        return 0.0;
+    }
+
+    private double MatchInstrumentTemplate(
+        Mat frame,
+        string instrumentId,
+        string targetName,
+        int baseX,
+        int baseY,
+        int baseW,
+        int baseH,
+        double scaleX,
+        double scaleY,
+        int roiOffsetX,
+        int roiOffsetY)
+    {
+        if (_exclusiveTemplates.TryGetValue(instrumentId, out var dict) && dict.TryGetValue(targetName, out var tmplMat))
         {
-            total = 1;
-            int roiX = (int)Math.Round(500.0 * scaleX);
-            int roiY = (int)Math.Round(1100.0 * scaleY);
-            int roiW = (int)Math.Round(1500.0 * scaleX);
-            int roiH = (int)Math.Round(250.0 * scaleY);
+            return MatchTemplateInFrame(frame, tmplMat, baseX, baseY, baseW, baseH, scaleX, scaleY, roiOffsetX, roiOffsetY);
+        }
 
-            roiX = Math.Clamp(roiX, 0, frame.Width - 10);
-            roiY = Math.Clamp(roiY, 0, frame.Height - 10);
-            roiW = Math.Clamp(roiW, 10, frame.Width - roiX);
-            roiH = Math.Clamp(roiH, 10, frame.Height - roiY);
+        if (_targetTemplates.TryGetValue(targetName, out tmplMat))
+        {
+            return MatchTemplateInFrame(frame, tmplMat, baseX, baseY, baseW, baseH, scaleX, scaleY, roiOffsetX, roiOffsetY);
+        }
 
-            using var roi = new Mat(frame, new Rect(roiX, roiY, roiW, roiH));
-            using var scaledRoi = new Mat();
-            Cv2.Resize(roi, scaledRoi, new Size(750, 125));
+        return 0.0;
+    }
 
+    private double MatchTemplateInFrame(
+        Mat frame,
+        Mat tmplMat,
+        int baseX,
+        int baseY,
+        int baseW,
+        int baseH,
+        double scaleX,
+        double scaleY,
+        int roiOffsetX,
+        int roiOffsetY)
+    {
+        if (frame.Empty() || tmplMat.Empty()) return 0.0;
+
+        // 换算当前分辨率下的坐标
+        double scaledX = baseX * scaleX;
+        double scaledY = baseY * scaleY;
+        double scaledW = baseW * scaleX;
+        double scaledH = baseH * scaleY;
+
+        // 转换为相对于当前帧（可能为 ROI 子图）的坐标
+        double frameTargetX = scaledX - roiOffsetX;
+        double frameTargetY = scaledY - roiOffsetY;
+
+        // 模板缩放后的尺寸
+        int tmplScaledW = Math.Max(1, (int)Math.Round(scaledW));
+        int tmplScaledH = Math.Max(1, (int)Math.Round(scaledH));
+
+        // 搜索区域适当增加 padding，允许微小 UI 抖动或尺寸舍入偏移
+        int padX = Math.Max(6, (int)Math.Round(12 * scaleX));
+        int padY = Math.Max(6, (int)Math.Round(10 * scaleY));
+
+        int searchX = (int)Math.Round(frameTargetX - padX);
+        int searchY = (int)Math.Round(frameTargetY - padY);
+        int searchW = tmplScaledW + 2 * padX;
+        int searchH = tmplScaledH + 2 * padY;
+
+        // 越界安全裁剪
+        if (searchX < 0)
+        {
+            searchW += searchX;
+            searchX = 0;
+        }
+        if (searchY < 0)
+        {
+            searchH += searchY;
+            searchY = 0;
+        }
+        if (searchX + searchW > frame.Width)
+        {
+            searchW = frame.Width - searchX;
+        }
+        if (searchY + searchH > frame.Height)
+        {
+            searchH = frame.Height - searchY;
+        }
+
+        if (searchW < tmplScaledW || searchH < tmplScaledH || searchW <= 0 || searchH <= 0)
+        {
+            return 0.0;
+        }
+
+        try
+        {
+            using var searchMat = new Mat(frame, new Rect(searchX, searchY, searchW, searchH));
             using var scaledTmpl = new Mat();
-            Cv2.Resize(_legacyTemplateMat, scaledTmpl, new Size(750, 125));
 
-            using var matchRes = new Mat();
-            Cv2.MatchTemplate(scaledRoi, scaledTmpl, matchRes, TemplateMatchModes.CCoeffNormed);
-            Cv2.MinMaxLoc(matchRes, out _, out double maxVal, out _, out _);
+            if (tmplMat.Width != tmplScaledW || tmplMat.Height != tmplScaledH)
+            {
+                Cv2.Resize(tmplMat, scaledTmpl, new Size(tmplScaledW, tmplScaledH));
+            }
+            else
+            {
+                tmplMat.CopyTo(scaledTmpl);
+            }
 
-            confidence = double.IsNaN(maxVal) ? 0.0 : maxVal;
-            if (confidence >= DefaultThreshold) hits = 1;
-            return;
+            using var matchResult = new Mat();
+            Cv2.MatchTemplate(searchMat, scaledTmpl, matchResult, TemplateMatchModes.CCoeffNormed);
+            Cv2.MinMaxLoc(matchResult, out _, out double maxScore, out _, out _);
+            return double.IsNaN(maxScore) ? 0.0 : maxScore;
         }
-
-        confidence = total > 0 ? totalScore / total : 0.0;
+        catch (Exception ex)
+        {
+            _logger?.LogDebug(ex, "Exception in MatchTemplateInFrame");
+            return 0.0;
+        }
     }
 
-    private static double MatchSmallCrop(Mat crop, Mat tmpl)
-    {
-        if (crop.Empty() || tmpl.Empty()) return 0.0;
-
-        using var resizedCrop = new Mat();
-        if (crop.Size() != tmpl.Size())
-        {
-            Cv2.Resize(crop, resizedCrop, tmpl.Size());
-        }
-        else
-        {
-            crop.CopyTo(resizedCrop);
-        }
-
-        using var matchResult = new Mat();
-        Cv2.MatchTemplate(resizedCrop, tmpl, matchResult, TemplateMatchModes.CCoeffNormed);
-        Cv2.MinMaxLoc(matchResult, out _, out double maxVal, out _, out _);
-        return double.IsNaN(maxVal) ? 0.0 : maxVal;
-    }
-
-    private static bool TryCropTarget(Mat frame, InstrumentTarget target, double scaleX, double scaleY, out Mat cropMat)
+    private static bool TryCropRegion(
+        Mat frame,
+        int baseX,
+        int baseY,
+        int baseW,
+        int baseH,
+        double scaleX,
+        double scaleY,
+        int roiOffsetX,
+        int roiOffsetY,
+        out Mat cropMat)
     {
         cropMat = null!;
-        int x = (int)Math.Round(target.X * scaleX);
-        int y = (int)Math.Round(target.Y * scaleY);
-        int w = (int)Math.Round(target.Width * scaleX);
-        int h = (int)Math.Round(target.Height * scaleY);
+        int x = (int)Math.Round(baseX * scaleX) - roiOffsetX;
+        int y = (int)Math.Round(baseY * scaleY) - roiOffsetY;
+        int w = (int)Math.Round(baseW * scaleX);
+        int h = (int)Math.Round(baseH * scaleY);
 
-        if (x < 0 || y < 0 || x + w > frame.Width || y + h > frame.Height || w <= 0 || h <= 0)
+        if (x < 0) { w += x; x = 0; }
+        if (y < 0) { h += y; y = 0; }
+        if (x + w > frame.Width) { w = frame.Width - x; }
+        if (y + h > frame.Height) { h = frame.Height - y; }
+
+        if (w <= 0 || h <= 0 || x < 0 || y < 0)
         {
             return false;
         }
 
         cropMat = new Mat(frame, new Rect(x, y, w, h));
         return true;
-    }
-
-    private void UpdateLatestResult(InstrumentDetectionResult result)
-    {
-        using var diagnostic = MusicOverlayDiagnostics.Measure(MusicOverlayDiagnostics.Metric.OcrNotifyMs);
-        LatestResult = result;
-        DetectionUpdated?.Invoke(result);
     }
 
     /// <summary>
@@ -428,13 +759,12 @@ public sealed class InstrumentDetector : IDisposable
     }
 
     /// <summary>
-    /// 从指定游戏窗口抓取一帧并检测竖笛演奏界面。
+    /// 从指定游戏窗口抓取一帧并检测乐器演奏界面。
     /// 若已有连续流在驱动更新（如截图器后台运行或 CaptureTestWindow 运行中），直接复用最新状态杜绝会话冲突。
     /// </summary>
     public bool CheckGameWindow(IntPtr hwnd, out double confidence)
     {
-        // 若近期（3 秒内）已有连续捕获帧产出判定，直接复用该状态
-        if (LatestResult != null && (DateTime.Now - _lastDetectionTime).TotalSeconds < 3.0)
+        if (LatestResult != null && (DateTime.UtcNow - _lastDetectionTime).TotalSeconds < 3.0)
         {
             confidence = LatestResult.CombinedConfidence;
             return LatestResult.IsDetected;
@@ -470,10 +800,22 @@ public sealed class InstrumentDetector : IDisposable
     {
         lock (_syncLock)
         {
-            foreach (var kv in _targetTemplates)
+            foreach (var kv in _keyTemplates)
             {
                 kv.Value.Dispose();
             }
+            _keyTemplates.Clear();
+
+            foreach (var instrumentKv in _exclusiveTemplates)
+            {
+                foreach (var kv in instrumentKv.Value)
+                {
+                    kv.Value.Dispose();
+                }
+                instrumentKv.Value.Clear();
+            }
+            _exclusiveTemplates.Clear();
+
             _targetTemplates.Clear();
 
             _legacyTemplateMat?.Dispose();

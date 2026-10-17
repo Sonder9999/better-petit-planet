@@ -8,6 +8,7 @@ using BetterPetitPlanet.Core.Process;
 using BetterPetitPlanet.GameTask;
 using BetterPetitPlanet.GameTask.AutoPick;
 using BetterPetitPlanet.GameTask.AutoPick.Ocr;
+using BetterPetitPlanet.GameTask.Music.Instrument;
 using BetterPetitPlanet.GameTask.Music.Overlay;
 using BetterPetitPlanet.GameTask.Music.Rendering;
 using BetterPetitPlanet.GameTask.Music.Service;
@@ -77,6 +78,7 @@ public partial class App : Application
             services.AddSingleton<AutoPickTrigger>();
 
             // Music services
+            services.AddSingleton<IInstrumentRegistry, InstrumentRegistry>();
             services.AddSingleton<InstrumentCoordinateService>();
             services.AddSingleton<InstrumentDetector>();
             services.AddSingleton<InstrumentDetectorTrigger>();

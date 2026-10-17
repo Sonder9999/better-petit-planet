@@ -649,7 +649,7 @@
                                    Text="{Binding InputModeDisplayText}" />
                         <ui:ToggleSwitch VerticalAlignment="Center"
                                          IsChecked="{Binding IsMouseInput, Mode=TwoWay}"
-                                         ToolTip="开启后使用鼠标直接点击游戏内的竖笛音符；关闭后使用键盘按键演奏" />
+                                         ToolTip="开启后使用鼠标直接点击游戏内的乐器音符；关闭后使用键盘按键演奏" />
                     </StackPanel>
                 </Grid>
             </Grid>

@@ -34,13 +34,13 @@
                     <ui:SymbolIcon Symbol="MusicNote2Play20" FontSize="20" Foreground="#FFD83B01" />
                 </Border>
                 <StackPanel VerticalAlignment="Center">
-                    <TextBlock FontSize="15" FontWeight="SemiBold" Text="未在游戏中检测到竖笛演奏界面" />
-                    <TextBlock Margin="0,2,0,0" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Text="请确认是否已在《星布谷地》游戏中拿出竖笛" />
+                    <TextBlock x:Name="TxtTitle" FontSize="15" FontWeight="SemiBold" Text="未在游戏中检测到乐器演奏界面" />
+                    <TextBlock x:Name="TxtSubtitle" Margin="0,2,0,0" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Text="请确认是否已在《星布谷地》游戏中拿出乐器" />
                 </StackPanel>
             </StackPanel>
 
-            <TextBlock FontSize="13" TextWrapping="Wrap" LineHeight="20" Foreground="{DynamicResource TextFillColorSecondaryBrush}">
-                如果您已在游戏中进入了乐器演奏状态，可以直接点击【继续演奏】强制开始；如需返回游戏拿出竖笛，请点击【确定】。
+            <TextBlock x:Name="TxtDescription" FontSize="13" TextWrapping="Wrap" LineHeight="20" Foreground="{DynamicResource TextFillColorSecondaryBrush}">
+                如果您已在游戏中进入了乐器演奏状态，可以直接点击【继续演奏】强制开始；如需返回游戏拿出乐器，请点击【确定】。
             </TextBlock>
         </StackPanel>
 

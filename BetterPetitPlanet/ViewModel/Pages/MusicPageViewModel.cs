@@ -132,7 +132,11 @@ public partial class MusicPageViewModel : ObservableObject
     public ObservableCollection<SongItemViewModel> Songs { get; } = [];
     private readonly ObservableCollection<SongItemViewModel> _allSongs = [];
 
-    public ObservableCollection<string> AvailableInstruments { get; } = ["竖笛", "吉他", "全部乐器"];
+    public ObservableCollection<string> AvailableInstruments { get; } = new(
+        BetterPetitPlanet.GameTask.Music.Instrument.InstrumentRegistry.Default
+            .GetAllProfiles()
+            .Select(p => p.DisplayName)
+            .Append("全部乐器"));
     public ObservableCollection<string> AvailableFormats { get; } = ["全部格式", "Petit JSON", "MIDI"];
 
     [ObservableProperty]
@@ -185,8 +189,8 @@ public partial class MusicPageViewModel : ObservableObject
         _playbackService.StateChanged += OnPlaybackStateChanged;
         _playbackService.NotePositionChanged += OnNotePositionChanged;
         _playbackService.PlaybackCompleted += OnPlaybackCompleted;
-        _playbackService.NextTrackRequested += () => Application.Current?.Dispatcher.Invoke(NextTrack);
-        _playbackService.PreviousTrackRequested += () => Application.Current?.Dispatcher.Invoke(PreviousTrack);
+        _playbackService.NextTrackRequested += () => Application.Current?.Dispatcher.InvokeAsync(NextTrack);
+        _playbackService.PreviousTrackRequested += () => Application.Current?.Dispatcher.InvokeAsync(PreviousTrack);
 
         if (_instrumentDetector != null)
         {
@@ -197,7 +201,7 @@ public partial class MusicPageViewModel : ObservableObject
         {
             _coordinator.Changed += () =>
             {
-                Application.Current?.Dispatcher.Invoke(() =>
+                Application.Current?.Dispatcher.InvokeAsync(() =>
                 {
                     InstrumentStatusText = _coordinator.Status;
                     InstrumentStatusColor = _coordinator.Ready ? "#107C41" : "#D83B01";
@@ -225,7 +229,7 @@ public partial class MusicPageViewModel : ObservableObject
     {
         long diagnosticPosted = MusicOverlayDiagnostics.Timestamp();
         using var diagnostic = MusicOverlayDiagnostics.Measure(MusicOverlayDiagnostics.Metric.OcrUiInvokeTotalMs);
-        Application.Current?.Dispatcher.Invoke(() =>
+        Application.Current?.Dispatcher.InvokeAsync(() =>
         {
             MusicOverlayDiagnostics.Elapsed(MusicOverlayDiagnostics.Metric.OcrUiInvokeQueueMs, diagnosticPosted);
             using var execution = MusicOverlayDiagnostics.Measure(MusicOverlayDiagnostics.Metric.OcrUiInvokeExecuteMs);
@@ -259,10 +263,15 @@ public partial class MusicPageViewModel : ObservableObject
             _taskManager.StartWithCachedTarget();
         }
 
-        // 若截图器正在运行，由 InstrumentDetectorTrigger 实时驱动 OCR，无需单次捕获
+        // 若截图器正在运行，由触发流实时驱动检测，直接依赖现有触发流，不再调用 CheckGameWindow
         if (_taskManager != null && _taskManager.IsRunning)
         {
-            if (_instrumentDetector.LatestResult != null)
+            if (_coordinator != null)
+            {
+                InstrumentStatusText = _coordinator.Status;
+                InstrumentStatusColor = _coordinator.Ready ? "#107C41" : "#D83B01";
+            }
+            else if (_instrumentDetector.LatestResult != null)
             {
                 InstrumentStatusText = _instrumentDetector.LatestResult.StatusSummary;
                 InstrumentStatusColor = _instrumentDetector.LatestResult.IsDetected ? "#107C41" : "#D83B01";
@@ -286,8 +295,20 @@ public partial class MusicPageViewModel : ObservableObject
         }
         else
         {
-            InstrumentStatusText = isOpen ? "竖笛: 已就绪" : "竖笛: 未拿出";
-            InstrumentStatusColor = isOpen ? "#107C41" : "#D83B01";
+            string? currentInst = !string.IsNullOrWhiteSpace(_instrumentDetector.LatestResult?.DisplayName)
+                ? _instrumentDetector.LatestResult.DisplayName
+                : (!string.IsNullOrWhiteSpace(SelectedInstrument) && SelectedInstrument != "全部乐器" ? SelectedInstrument : null);
+
+            if (isOpen)
+            {
+                InstrumentStatusText = $"{currentInst ?? "乐器"}: 已就绪";
+                InstrumentStatusColor = "#107C41";
+            }
+            else
+            {
+                InstrumentStatusText = currentInst != null ? $"{currentInst}: 未拿出" : "未检测到乐器";
+                InstrumentStatusColor = "#D83B01";
+            }
         }
     }
 
@@ -439,7 +460,7 @@ public partial class MusicPageViewModel : ObservableObject
             if (_processDetector != null && _instrumentDetector != null && _instrumentDetector.IsTemplateLoaded)
             {
                 var hwnd = _processDetector.FindMainWindowHandle();
-                if (hwnd != IntPtr.Zero && !ConfirmContinuePlayingIfNotReady(hwnd))
+                if (hwnd != IntPtr.Zero && !ConfirmContinuePlayingIfNotReady(hwnd, SelectedSong?.Timeline?.Metadata?.Instrument))
                 {
                     return;
                 }
@@ -519,7 +540,7 @@ public partial class MusicPageViewModel : ObservableObject
 
     private void OnPlaybackCompleted()
     {
-        Application.Current?.Dispatcher.Invoke(() =>
+        Application.Current?.Dispatcher.InvokeAsync(() =>
         {
             switch (PlaybackMode)
             {
@@ -754,7 +775,7 @@ public partial class MusicPageViewModel : ObservableObject
                 var hwnd = _processDetector.FindMainWindowHandle();
                 if (hwnd != IntPtr.Zero)
                 {
-                    if (!ConfirmContinuePlayingIfNotReady(hwnd))
+                    if (!ConfirmContinuePlayingIfNotReady(hwnd, target.Timeline.Metadata?.Instrument))
                     {
                         return;
                     }
@@ -768,7 +789,7 @@ public partial class MusicPageViewModel : ObservableObject
         }
     }
 
-    private bool ConfirmContinuePlayingIfNotReady(IntPtr hwnd)
+    private bool ConfirmContinuePlayingIfNotReady(IntPtr hwnd, string? targetInstrument = null)
     {
         if (_instrumentDetector == null || !_instrumentDetector.IsTemplateLoaded)
         {
@@ -776,13 +797,23 @@ public partial class MusicPageViewModel : ObservableObject
         }
 
         bool isOpen = _instrumentDetector.CheckGameWindow(hwnd, out _);
-        if (isOpen)
+        var latest = _instrumentDetector.LatestResult;
+
+        // 画面有乐器且与目标曲谱乐器一致时方可直接放行；若乐器不匹配，继续弹窗提示
+        if (isOpen && latest != null && (string.IsNullOrWhiteSpace(targetInstrument) ||
+            MusicReadinessGate.MatchesInstrument(targetInstrument, latest.InstrumentId, latest.DisplayName)))
         {
             return true;
         }
 
+        string instrumentName = !string.IsNullOrWhiteSpace(targetInstrument)
+            ? targetInstrument
+            : (!string.IsNullOrWhiteSpace(SelectedSong?.Timeline?.Metadata?.Instrument)
+                ? SelectedSong.Timeline.Metadata.Instrument
+                : (!string.IsNullOrWhiteSpace(SelectedInstrument) && SelectedInstrument != "全部乐器" ? SelectedInstrument : "乐器"));
+
         // 弹窗提示：右边是确定按钮，继续演奏在最左边按钮
-        var dialog = new BetterPetitPlanet.View.Windows.InstrumentNotReadyDialog
+        var dialog = new BetterPetitPlanet.View.Windows.InstrumentNotReadyDialog(instrumentName)
         {
             Owner = Application.Current?.MainWindow
         };
@@ -823,7 +854,7 @@ public partial class MusicPageViewModel : ObservableObject
                 var hwnd = _processDetector.FindMainWindowHandle();
                 if (hwnd != IntPtr.Zero)
                 {
-                    if (!ConfirmContinuePlayingIfNotReady(hwnd))
+                    if (!ConfirmContinuePlayingIfNotReady(hwnd, SelectedSong?.Timeline?.Metadata?.Instrument))
                     {
                         return;
                     }

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -152,10 +152,17 @@ public partial class CaptureTestWindow : FluentWindow
                 RoiBorder.Width = roi.Width;
                 RoiBorder.Height = roi.Height;
 
-                // 更新 7 个独立音符按键小方块视觉选框 (依据 2560x1440 原生标注比例自适应)
-                for (int i = 0; i < 7 && i < _btnRois.Length; i++)
+                // 更新 7 个独立音符按键小方块视觉选框 (依据检测出的乐器档案与 2560x1440 原生标注比例自适应)
+                var currentBounds = (_instrumentDetector?.LatestResult?.InstrumentId != null &&
+                                     BetterPetitPlanet.GameTask.Music.Instrument.InstrumentRegistry.Default.TryGetProfile(_instrumentDetector.LatestResult.InstrumentId, out var activeProfile) &&
+                                     activeProfile != null &&
+                                     activeProfile.ButtonBounds.Count >= 7)
+                    ? activeProfile.ButtonBounds
+                    : InstrumentTargets.ButtonBounds;
+
+                for (int i = 0; i < 7 && i < _btnRois.Length && i < currentBounds.Count; i++)
                 {
-                    var b = InstrumentTargets.ButtonBounds[i];
+                    var b = currentBounds[i];
                     int bx = (int)Math.Round(b.X * mat.Width / (double)InstrumentTargets.BaseWidth);
                     int by = (int)Math.Round(b.Y * mat.Height / (double)InstrumentTargets.BaseHeight);
                     int bw = (int)Math.Round(b.W * mat.Width / (double)InstrumentTargets.BaseWidth);

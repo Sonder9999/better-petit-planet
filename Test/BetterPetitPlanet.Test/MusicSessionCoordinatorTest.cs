@@ -275,4 +275,49 @@ public sealed class MusicSessionCoordinatorTest : IDisposable
         coordinator.Tick();
         Assert.True(_pickup.MusicSuppressed);
     }
+
+    [Fact]
+    public void LoadTimeline_SetsTargetInstrument_AndCoordinatorEvaluatesMatch()
+    {
+        using var coordinator = CreateCoordinator();
+
+        coordinator.LoadTimeline(new()
+        {
+            Metadata = new() { Instrument = "吉他" },
+            Events = [new() { Key = "A", TimeMs = 0 }],
+            TotalDurationMs = 100
+        });
+
+        Assert.Equal("吉他", coordinator.ReadinessGate.TargetInstrument);
+
+        // Stabilize with Guitar detection
+        coordinator.ReadinessGate.ObserveCapture(_now);
+        coordinator.ReadinessGate.ObserveDetection(true, _now, "Guitar", "吉他");
+        coordinator.ReadinessGate.ObserveDetection(true, _now, "Guitar", "吉他");
+        coordinator.Tick();
+
+        Assert.True(coordinator.Ready);
+        Assert.Equal("吉他已就绪", coordinator.Status);
+    }
+
+    [Fact]
+    public void LoadTimeline_MismatchedInstrument_CoordinatorDeniesAndReflectsStatus()
+    {
+        using var coordinator = CreateCoordinator();
+        coordinator.LoadTimeline(new()
+        {
+            Metadata = new() { Instrument = "吉他" },
+            Events = [new() { Key = "A", TimeMs = 0 }],
+            TotalDurationMs = 100
+        });
+
+        // Stabilize with Recorder detection
+        coordinator.ReadinessGate.ObserveCapture(_now);
+        coordinator.ReadinessGate.ObserveDetection(true, _now, "Recorder", "竖笛");
+        coordinator.ReadinessGate.ObserveDetection(true, _now, "Recorder", "竖笛");
+        coordinator.Tick();
+
+        Assert.False(coordinator.Ready);
+        Assert.Equal("乐器不匹配：当前曲谱为吉他，画面检测为竖笛", coordinator.Status);
+    }
 }

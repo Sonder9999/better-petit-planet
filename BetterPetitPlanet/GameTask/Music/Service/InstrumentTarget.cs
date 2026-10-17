@@ -1,3 +1,5 @@
+using System;
+
 namespace BetterPetitPlanet.GameTask.Music.Service;
 
 /// <summary>
@@ -69,11 +71,28 @@ public static class InstrumentTargets
     ];
 }
 
+public enum InstrumentDetectionState
+{
+    None = 0,
+    KeyCandidateFound = 1,
+    Confirmed = 2,
+    Ambiguous = 3,
+    Error = 4
+}
+
 /// <summary>
-/// 竖笛识别综合判定结果
+/// 竖笛与吉他等多乐器识别综合判定结果
 /// </summary>
 public class InstrumentDetectionResult
 {
+    public string? InstrumentId { get; set; }
+    public string? DisplayName { get; set; }
+    public InstrumentDetectionState State { get; set; } = InstrumentDetectionState.None;
+    public string Stage { get; set; } = "None";
+    public bool OcrInvoked { get; set; }
+    public DateTime Timestamp { get; set; } = DateTime.UtcNow;
+    public string? Message { get; set; }
+
     public bool IsDetected { get; set; }
     public double OcrConfidence { get; set; }
     public int OcrHits { get; set; }
@@ -81,6 +100,10 @@ public class InstrumentDetectionResult
     public double TemplateConfidence { get; set; }
     public int TemplateHits { get; set; }
     public int TemplateTotal { get; set; }
+    public double NumberConfidence { get; set; }
+    public int NumberHits { get; set; }
+    public double SyllableConfidence { get; set; }
+    public int SyllableHits { get; set; }
     public double CombinedConfidence { get; set; }
     public string Details { get; set; } = string.Empty;
     public string StatusSummary { get; set; } = string.Empty;

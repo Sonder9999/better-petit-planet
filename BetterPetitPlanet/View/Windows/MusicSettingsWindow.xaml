@@ -223,7 +223,7 @@
                                 <TextBlock FontWeight="Medium" Text="鼠标输入模式" />
                                 <TextBlock FontSize="12"
                                            Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                                           Text="开启后使用鼠标直接点击游戏内的竖笛音符；关闭后使用键盘按键演奏" />
+                                           Text="开启后使用鼠标直接点击游戏内的乐器音符；关闭后使用键盘按键演奏" />
                             </StackPanel>
                             <ui:ToggleSwitch Grid.Column="1"
                                              VerticalAlignment="Center"

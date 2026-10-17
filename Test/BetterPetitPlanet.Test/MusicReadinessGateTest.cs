@@ -74,4 +74,71 @@ public class MusicReadinessGateTest
         gate.ObserveDetection(true, 2300);
         Assert.Equal("截图已过期", gate.Evaluate(2300, true, true, true).Reason);
     }
+
+    [Theory]
+    [InlineData("guitar", "Guitar", "吉他", "吉他已就绪")]
+    [InlineData("吉他", "Guitar", "吉他", "吉他已就绪")]
+    [InlineData("recorder", "Recorder", "竖笛", "竖笛已就绪")]
+    [InlineData("竖笛", "Recorder", "竖笛", "竖笛已就绪")]
+    [InlineData("flute", "Recorder", "竖笛", "竖笛已就绪")]
+    public void MultiInstrument_MatchingTargetInstrument_BecomesReady(string target, string detectedId, string displayName, string expectedReason)
+    {
+        var gate = new MusicReadinessGate(new MusicReadinessOptions())
+        {
+            TargetInstrument = target
+        };
+        gate.ObserveCapture(0);
+        gate.ObserveDetection(true, 0, detectedId, displayName);
+        gate.ObserveDetection(true, 100, detectedId, displayName);
+        var result = gate.Evaluate(100, true, true, true);
+        Assert.True(result.Ready);
+        Assert.Equal(expectedReason, result.Reason);
+    }
+
+    [Fact]
+    public void MultiInstrument_MismatchedTargetInstrument_DeniesReadiness()
+    {
+        var gate = new MusicReadinessGate(new MusicReadinessOptions())
+        {
+            TargetInstrument = "吉他"
+        };
+        gate.ObserveCapture(0);
+        gate.ObserveDetection(true, 0, "Recorder", "竖笛");
+        gate.ObserveDetection(true, 100, "Recorder", "竖笛");
+        var result = gate.Evaluate(100, true, true, true);
+        Assert.False(result.Ready);
+        Assert.Equal("乐器不匹配：当前曲谱为吉他，画面检测为竖笛", result.Reason);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("全部乐器")]
+    [InlineData("all")]
+    public void MultiInstrument_AllOrNullInstruments_AcceptsAnyDetectedInstrument(string? target)
+    {
+        var gate = new MusicReadinessGate(new MusicReadinessOptions())
+        {
+            TargetInstrument = target
+        };
+        gate.ObserveCapture(0);
+        gate.ObserveDetection(true, 0, "Guitar", "吉他");
+        gate.ObserveDetection(true, 100, "Guitar", "吉他");
+        var result = gate.Evaluate(100, true, true, true);
+        Assert.True(result.Ready);
+        Assert.Equal("吉他已就绪", result.Reason);
+    }
+
+    [Fact]
+    public void MultiInstrument_NotReady_ReasonShowsWaitingForTargetOrInstrument()
+    {
+        var gate1 = new MusicReadinessGate(new MusicReadinessOptions()) { TargetInstrument = "吉他" };
+        gate1.ObserveCapture(0);
+        gate1.ObserveDetection(true, 0, "Guitar", "吉他"); // Only 1 hit, needs 2
+        Assert.Equal("等待吉他", gate1.Evaluate(0, true, true, true).Reason);
+
+        var gate2 = new MusicReadinessGate(new MusicReadinessOptions()); // null target
+        gate2.ObserveCapture(0);
+        gate2.ObserveDetection(false, 0);
+        Assert.Equal("等待乐器", gate2.Evaluate(0, true, true, true).Reason);
+    }
 }

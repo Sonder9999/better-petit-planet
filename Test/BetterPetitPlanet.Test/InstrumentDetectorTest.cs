@@ -1,5 +1,7 @@
 using System;
 using System.IO;
+using System.Linq;
+using System.Threading;
 using BetterPetitPlanet.Core.Config;
 using BetterPetitPlanet.GameTask.Music.Service;
 using BetterPetitPlanet.ViewModel.Pages;
@@ -10,11 +12,43 @@ namespace BetterPetitPlanet.Test;
 
 public class InstrumentDetectorTest
 {
+    private readonly Xunit.Abstractions.ITestOutputHelper? _output;
+
+    public InstrumentDetectorTest(Xunit.Abstractions.ITestOutputHelper? output = null)
+    {
+        _output = output;
+    }
+
     private class FakeConfigService : IConfigService
     {
         public AppConfig Config { get; set; } = new AppConfig();
         public void Save() { }
         public void Reload() { }
+    }
+
+    private static string? FindScreenshot(string fileName)
+    {
+        var candidates = new[]
+        {
+            Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "petit_music", fileName)),
+            Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "petit_music", fileName)),
+            Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "..", "petit_music", fileName)),
+            Path.Combine(@"D:\Coding\Game\petit_planet\petit_music", fileName)
+        };
+        return candidates.FirstOrDefault(File.Exists);
+    }
+
+    private static string? FindNegativeScreenshot()
+    {
+        var candidates = new[]
+        {
+            Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "test_key_screen", "test7_before.png")),
+            Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "test_key_screen", "test7_before.png")),
+            Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "..", "better-petit-planet", "test_key_screen", "test7_before.png")),
+            @"D:\Coding\Game\petit_planet\better-petit-planet\test_key_screen\test7_before.png",
+            @"D:\Coding\Game\petit_planet\test_key_screen\test7_before.png"
+        };
+        return candidates.FirstOrDefault(File.Exists);
     }
 
     [Fact]
@@ -61,8 +95,8 @@ public class InstrumentDetectorTest
     {
         using var detector = new InstrumentDetector();
 
-        string recorderPng = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "petit_music", "music_recorder.png"));
-        if (File.Exists(recorderPng))
+        string? recorderPng = FindScreenshot("music_recorder.png");
+        if (recorderPng != null)
         {
             using var mat = Cv2.ImRead(recorderPng, ImreadModes.Color);
             bool isDetected = detector.Detect(mat, out double confidence);
@@ -70,8 +104,8 @@ public class InstrumentDetectorTest
             Assert.True(confidence >= 0.5, $"Expected confidence >= 0.5, got {confidence}");
         }
 
-        string closedPng = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "test_key_screen", "test7_before.png"));
-        if (File.Exists(closedPng))
+        string? closedPng = FindNegativeScreenshot();
+        if (closedPng != null)
         {
             using var mat = Cv2.ImRead(closedPng, ImreadModes.Color);
             bool isDetected = detector.Detect(mat, out double confidence);
@@ -81,31 +115,125 @@ public class InstrumentDetectorTest
     }
 
     [Fact]
-    public void TestInstrumentDetector_DetectFull_PureOcr()
+    public void TestInstrumentDetector_DetectFull_Recorder()
     {
         using var detector = new InstrumentDetector();
 
-        string recorderPng = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "petit_music", "music_recorder.png"));
-        if (File.Exists(recorderPng))
+        string? recorderPng = FindScreenshot("music_recorder.png");
+        if (recorderPng != null)
         {
             using var mat = Cv2.ImRead(recorderPng, ImreadModes.Color);
             var result = detector.DetectFull(mat);
-            Assert.True(result.IsDetected, $"Expected recorder UI detected, result: {result.StatusSummary}");
-            Assert.True(result.OcrConfidence >= 0.40);
-            Assert.Equal(0.0, result.TemplateConfidence);
-            Assert.Contains("OCR:", result.Details);
-            Assert.Contains("已就绪", result.StatusSummary);
-        }
 
-        string closedPng = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "test_key_screen", "test7_before.png"));
-        if (File.Exists(closedPng))
+            Assert.True(result.IsDetected, $"Expected recorder UI detected, result: {result.StatusSummary}");
+            Assert.Equal("Recorder", result.InstrumentId);
+            Assert.Equal("竖笛", result.DisplayName);
+            Assert.Equal(InstrumentDetectionState.Confirmed, result.State);
+            Assert.Equal("FeatureVerification", result.Stage);
+            Assert.False(result.OcrInvoked);
+            Assert.True(result.TemplateConfidence >= 0.60);
+            Assert.Contains("竖笛: 已就绪", result.StatusSummary);
+            Assert.Contains("模板:", result.StatusSummary);
+        }
+    }
+
+    [Fact]
+    public void TestInstrumentDetector_DetectFull_Guitar()
+    {
+        using var detector = new InstrumentDetector();
+
+        string? guitarPng = FindScreenshot("music_guitar.png");
+        if (guitarPng != null)
+        {
+            using var mat = Cv2.ImRead(guitarPng, ImreadModes.Color);
+            var result = detector.DetectFull(mat);
+
+            Assert.True(result.IsDetected, $"Expected guitar UI detected, result: {result.StatusSummary}");
+            Assert.Equal("Guitar", result.InstrumentId);
+            Assert.Equal("吉他", result.DisplayName);
+            Assert.Equal(InstrumentDetectionState.Confirmed, result.State);
+            Assert.Equal("FeatureVerification", result.Stage);
+            Assert.False(result.OcrInvoked);
+            Assert.True(result.TemplateConfidence >= 0.60);
+            Assert.Contains("吉他: 已就绪", result.StatusSummary);
+            Assert.Contains("模板:", result.StatusSummary);
+        }
+    }
+
+    [Fact]
+    public void TestInstrumentDetector_DetectFull_NegativeScreen()
+    {
+        using var detector = new InstrumentDetector();
+
+        string? closedPng = FindNegativeScreenshot();
+        if (closedPng != null)
         {
             using var mat = Cv2.ImRead(closedPng, ImreadModes.Color);
             var result = detector.DetectFull(mat);
+
             Assert.False(result.IsDetected, $"Expected closed UI not detected, result: {result.StatusSummary}");
-            Assert.True(result.OcrConfidence < 0.30);
-            Assert.Contains("未拿出", result.StatusSummary);
+            Assert.Equal(InstrumentDetectionState.None, result.State);
+            Assert.Equal("未检测到乐器", result.StatusSummary);
         }
+    }
+
+    [Fact]
+    public void TestInstrumentDetector_Stage1_ShortCircuitOnBlank()
+    {
+        using var detector = new InstrumentDetector();
+
+        // 黑色图像，key_A 匹配分数应极低，立刻短路返回
+        using var blankMat = new Mat(1440, 2560, MatType.CV_8UC3, new Scalar(0, 0, 0));
+        var result = detector.DetectFull(blankMat);
+
+        Assert.False(result.IsDetected);
+        Assert.Equal(InstrumentDetectionState.None, result.State);
+        Assert.Equal("KeyAnchor", result.Stage);
+        Assert.False(result.OcrInvoked);
+        Assert.Equal("未检测到乐器", result.StatusSummary);
+    }
+
+    [Fact]
+    public void TestInstrumentDetector_RoiCroppedSubImage()
+    {
+        using var detector = new InstrumentDetector();
+
+        string? guitarPng = FindScreenshot("music_guitar.png");
+        if (guitarPng != null)
+        {
+            using var fullMat = Cv2.ImRead(guitarPng, ImreadModes.Color);
+            // 局部裁剪 ROI (500, 1100, 1550, 250)
+            using var roiSub = new Mat(fullMat, new Rect(500, 1100, 1550, 250));
+            using var roiCopy = roiSub.Clone();
+
+            var result = detector.DetectFull(roiCopy, 500, 1100, 2560, 1440);
+
+            Assert.True(result.IsDetected);
+            Assert.Equal("Guitar", result.InstrumentId);
+            Assert.Equal(InstrumentDetectionState.Confirmed, result.State);
+        }
+    }
+
+    [Fact]
+    public void TestInstrumentDetector_LockSafety_NotificationOutsideLock()
+    {
+        using var detector = new InstrumentDetector();
+        bool eventFired = false;
+        InstrumentDetectionResult? receivedResult = null;
+
+        detector.DetectionUpdated += res =>
+        {
+            // 在事件回调内访问 detector.LatestResult，验证锁外通知不发生自死锁
+            eventFired = true;
+            receivedResult = res;
+            Assert.NotNull(detector.LatestResult);
+        };
+
+        using var blankMat = new Mat(720, 1280, MatType.CV_8UC3, new Scalar(0, 0, 0));
+        var result = detector.DetectFull(blankMat);
+
+        Assert.True(eventFired);
+        Assert.Same(result, receivedResult);
     }
 
     [Fact]
@@ -154,8 +282,8 @@ public class InstrumentDetectorTest
         Assert.True(trigger.IsEnabled);
         Assert.Equal(25, trigger.Priority);
 
-        string recorderPng = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "petit_music", "music_recorder.png"));
-        if (File.Exists(recorderPng))
+        string? recorderPng = FindScreenshot("music_recorder.png");
+        if (recorderPng != null)
         {
             using var mat = Cv2.ImRead(recorderPng, ImreadModes.Color);
             using var content = new BetterPetitPlanet.GameTask.CaptureContent(mat.Clone(), IntPtr.Zero, new System.Drawing.Rectangle(0, 0, mat.Width, mat.Height));
@@ -171,11 +299,79 @@ public class InstrumentDetectorTest
 
         using var testMat = new Mat(48, 120, MatType.CV_8UC3, new Scalar(255, 255, 255));
 
-        // 并发 6 个线程同时调用 Recognize，验证内部线程安全互斥锁生效，无 AccessViolation 异常
+        // 并发 10 个线程同时调用 Recognize，验证内部线程安全互斥锁生效，无 AccessViolation 异常
         System.Threading.Tasks.Parallel.For(0, 10, _ =>
         {
             var res = engine.Recognize(testMat);
             Assert.NotNull(res);
         });
+    }
+
+    [Fact]
+    public void TestInstrumentDetector_PerformanceBenchmark()
+    {
+        using var detector = new InstrumentDetector();
+
+        // 1. 测试负样本 (非乐器画面) Stage 1 短路性能
+        using var blankMat = new Mat(1440, 2560, MatType.CV_8UC3, new Scalar(40, 40, 40));
+        // 预热
+        detector.DetectFull(blankMat);
+
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        const int negativeIterations = 50;
+        for (int i = 0; i < negativeIterations; i++)
+        {
+            var r = detector.DetectFull(blankMat);
+            Assert.False(r.IsDetected);
+            Assert.False(r.OcrInvoked);
+            Assert.Equal("KeyAnchor", r.Stage);
+        }
+        sw.Stop();
+        double avgNegativeMs = sw.Elapsed.TotalMilliseconds / negativeIterations;
+
+        // 2. 测试真实竖笛截图 Stage 2 纯模板检测性能与 OCR 调用
+        string? recorderPng = FindScreenshot("music_recorder.png");
+        double avgRecorderMs = 0;
+        if (recorderPng != null)
+        {
+            using var mat = Cv2.ImRead(recorderPng, ImreadModes.Color);
+            detector.DetectFull(mat); // 预热
+            sw.Restart();
+            const int recorderIterations = 20;
+            for (int i = 0; i < recorderIterations; i++)
+            {
+                var r = detector.DetectFull(mat);
+                Assert.True(r.IsDetected);
+                Assert.Equal("Recorder", r.InstrumentId);
+                Assert.False(r.OcrInvoked);
+            }
+            sw.Stop();
+            avgRecorderMs = sw.Elapsed.TotalMilliseconds / recorderIterations;
+        }
+
+        // 3. 测试真实吉他截图 Stage 2 纯模板检测性能与 OCR 调用
+        string? guitarPng = FindScreenshot("music_guitar.png");
+        double avgGuitarMs = 0;
+        if (guitarPng != null)
+        {
+            using var mat = Cv2.ImRead(guitarPng, ImreadModes.Color);
+            detector.DetectFull(mat); // 预热
+            sw.Restart();
+            const int guitarIterations = 20;
+            for (int i = 0; i < guitarIterations; i++)
+            {
+                var r = detector.DetectFull(mat);
+                Assert.True(r.IsDetected);
+                Assert.Equal("Guitar", r.InstrumentId);
+                Assert.False(r.OcrInvoked);
+            }
+            sw.Stop();
+            avgGuitarMs = sw.Elapsed.TotalMilliseconds / guitarIterations;
+        }
+
+        // 输出性能基准数据
+        _output?.WriteLine($"[Benchmark] Negative Short-Circuit: {avgNegativeMs:F2} ms (OCR calls: 0)");
+        _output?.WriteLine($"[Benchmark] Recorder Stage 2 Detect: {avgRecorderMs:F2} ms (OCR calls: 0)");
+        _output?.WriteLine($"[Benchmark] Guitar Stage 2 Detect: {avgGuitarMs:F2} ms (OCR calls: 0)");
     }
 }

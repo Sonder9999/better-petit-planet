@@ -51,19 +51,29 @@ if ($LASTEXITCODE -ne 0) {
 
 # 2. Copy selected songs (dao_xiang.json, one_last_kiss.json, and see_you_again.json for release)
 $RecorderSongsDest = Join-Path $ReleaseDir "data\songs\recorder"
+$GuitarSongsDest = Join-Path $ReleaseDir "data\songs\guitar"
 if (Test-Path $SongsDest) {
     Remove-Item -Path $SongsDest -Recurse -Force -ErrorAction SilentlyContinue
 }
 New-Item -ItemType Directory -Path $RecorderSongsDest -Force | Out-Null
+New-Item -ItemType Directory -Path $GuitarSongsDest -Force | Out-Null
 
 $ReleaseSongs = @("dao_xiang.json", "one_last_kiss.json", "see_you_again.json")
 foreach ($songFile in $ReleaseSongs) {
-    $srcSongPath = Join-Path $SongsSource "recorder\$songFile"
-    if (Test-Path $srcSongPath) {
-        Write-Host "Copying release song: $songFile" -ForegroundColor Yellow
-        Copy-Item -Path $srcSongPath -Destination (Join-Path $RecorderSongsDest $songFile) -Force
+    $srcRecorderSongPath = Join-Path $SongsSource "recorder\$songFile"
+    if (Test-Path $srcRecorderSongPath) {
+        Write-Host "Copying release recorder song: $songFile" -ForegroundColor Yellow
+        Copy-Item -Path $srcRecorderSongPath -Destination (Join-Path $RecorderSongsDest $songFile) -Force
     } else {
-        Write-Host "Warning: Release song not found at $srcSongPath" -ForegroundColor DarkYellow
+        Write-Host "Warning: Release recorder song not found at $srcRecorderSongPath" -ForegroundColor DarkYellow
+    }
+
+    $srcGuitarSongPath = Join-Path $SongsSource "guitar\$songFile"
+    if (Test-Path $srcGuitarSongPath) {
+        Write-Host "Copying release guitar song: $songFile" -ForegroundColor Yellow
+        Copy-Item -Path $srcGuitarSongPath -Destination (Join-Path $GuitarSongsDest $songFile) -Force
+    } else {
+        Write-Host "Warning: Release guitar song not found at $srcGuitarSongPath" -ForegroundColor DarkYellow
     }
 }
 
