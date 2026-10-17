@@ -149,6 +149,7 @@ public partial class App : Application
         DispatcherUnhandledException += OnDispatcherUnhandledException;
         AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
         TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
+        AppDomain.CurrentDomain.ProcessExit += (_, _) => HardwareInputSimulator.ReleaseAllHeldKeys();
 
         try
         {
@@ -253,6 +254,7 @@ public partial class App : Application
         }
         finally
         {
+            HardwareInputSimulator.ReleaseAllHeldKeys();
             MusicOverlayDiagnostics.Shutdown();
             Log.CloseAndFlush();
             base.OnExit(e);
@@ -262,12 +264,14 @@ public partial class App : Application
 
     private void OnDispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)
     {
+        HardwareInputSimulator.ReleaseAllHeldKeys();
         Log.Error(e.Exception, "Unhandled UI dispatcher exception occurred");
         e.Handled = true;
     }
 
     private void OnUnhandledException(object sender, UnhandledExceptionEventArgs e)
     {
+        HardwareInputSimulator.ReleaseAllHeldKeys();
         if (e.ExceptionObject is Exception ex)
         {
             Log.Fatal(ex, "Fatal domain unhandled exception occurred");
