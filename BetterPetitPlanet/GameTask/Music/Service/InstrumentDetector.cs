@@ -279,46 +279,12 @@ public sealed class InstrumentDetector : IDisposable
         // =========================================================================
         // Stage 1: 按键快速初筛短路 (KeyAnchor Fast Filter)
         // =========================================================================
-        // 检查 key_A (2560x1440 下原生位置 574, 1272, 48, 38)
         double scoreA = MatchKeyTemplate(frame, "key_A", 574, 1272, 48, 38, scaleX, scaleY, roiOffsetX, roiOffsetY);
-        if (scoreA < KeyAnchorThreshold)
-        {
-            return new InstrumentDetectionResult
-            {
-                IsDetected = false,
-                State = InstrumentDetectionState.None,
-                Stage = "KeyAnchor",
-                OcrInvoked = false,
-                TemplateConfidence = scoreA,
-                CombinedConfidence = scoreA,
-                StatusSummary = "未检测到乐器",
-                Details = $"key_A 未匹配 ({scoreA:P0} < {KeyAnchorThreshold:P0})"
-            };
-        }
-
-        // key_A 命中，继续检查 key_L (原生位置 1936, 1272, 48, 38)
         double scoreL = MatchKeyTemplate(frame, "key_L", 1936, 1272, 48, 38, scaleX, scaleY, roiOffsetX, roiOffsetY);
-        if (scoreL < KeyAnchorThreshold)
-        {
-            return new InstrumentDetectionResult
-            {
-                IsDetected = false,
-                State = InstrumentDetectionState.None,
-                Stage = "KeyAnchor",
-                OcrInvoked = false,
-                TemplateConfidence = (scoreA + scoreL) / 2.0,
-                CombinedConfidence = (scoreA + scoreL) / 2.0,
-                StatusSummary = "未检测到乐器",
-                Details = $"key_L 未匹配 ({scoreL:P0} < {KeyAnchorThreshold:P0})"
-            };
-        }
+        double keyAvg = (scoreA + scoreL) / 2.0;
+        double keyMax = Math.Max(scoreA, scoreL);
 
-        // key_A 与 key_L 均命中，确认 7 键演奏界面存在，进入 Stage 2
-        double keyAvgConfidence = (scoreA + scoreL) / 2.0;
-
-        // =========================================================================
-        // Stage 2: 乐器专属视觉特征验证 (Feature Verification - 配置驱动多乐器评估)
-        // =========================================================================
+        // Stage 2 候选乐器评估 (配置驱动多乐器特征比对)
         var profiles = _registry.GetAllProfiles().ToList();
         var candidateResults = new List<(InstrumentProfile Profile, double AvgScore, int Hits, int Total, string Detail)>();
 
@@ -361,7 +327,32 @@ public sealed class InstrumentDetector : IDisposable
         }
 
         var sortedCandidates = candidateResults.OrderByDescending(c => c.AvgScore).ToList();
+        double maxCandidateScore = sortedCandidates.Count > 0 ? sortedCandidates[0].AvgScore : 0.0;
 
+        // Stage 1 门禁快速短路判定：
+        // 彻底消除单一/双点半透明按键一票否决权！
+        // 仅当按键无显著匹配（keyMax < 0.40 且 keyAvg < 0.35）且所有乐器专属特征亦无匹配（maxCandidateScore < 0.35）时，
+        // 确认为非乐器画面（如野外跑动、探索、过场黑屏等），安全短路以避免不必要的全量计算与 OCR。
+        // 若按键虽受草地/夜间光照干扰（如 scoreL 跌至 34%），但 keyA 或乐器专属高对比度特征显著存在，绝不提前否决！
+        if (keyMax < 0.40 && keyAvg < 0.35 && maxCandidateScore < 0.35)
+        {
+            double earlyConf = Math.Max(0.0, Math.Max(keyAvg, maxCandidateScore));
+            return new InstrumentDetectionResult
+            {
+                IsDetected = false,
+                State = InstrumentDetectionState.None,
+                Stage = "KeyAnchor",
+                OcrInvoked = false,
+                TemplateConfidence = earlyConf,
+                CombinedConfidence = earlyConf,
+                StatusSummary = "未检测到乐器",
+                Details = $"未匹配到按键或乐器特征 (key_A={scoreA:P0}, key_L={scoreL:P0}, 特征最高={maxCandidateScore:P0})"
+            };
+        }
+
+        // =========================================================================
+        // Stage 2: 乐器专属视觉特征验证 (Feature Verification - 配置驱动多乐器评估)
+        // =========================================================================
         if (sortedCandidates.Count > 0 && sortedCandidates[0].AvgScore >= FeatureThreshold)
         {
             var best = sortedCandidates[0];
@@ -425,49 +416,60 @@ public sealed class InstrumentDetector : IDisposable
     {
         using var diagnostic = MusicOverlayDiagnostics.Measure(MusicOverlayDiagnostics.Metric.OcrRecognitionMs);
 
-        // 7 个按键上方文本标注区域 (涵盖和弦/数字与唱名)
-        // 2560x1440 原生标注区间：Y 1145~1255，高约 110
-        var keyRegions = new (int X, int Y, int W, int H)[]
-        {
-            (565, 1145, 65, 110),
-            (760, 1145, 130, 110),
-            (990, 1145, 125, 110),
-            (1240, 1145, 75, 110),
-            (1470, 1145, 75, 110),
-            (1670, 1145, 130, 110),
-            (1910, 1145, 110, 110),
-        };
+        // 配置驱动多乐器 OCR 区域裁剪与识别（针对各乐器 ExpectedText 专属区域精确定位）
+        var profileOcrHits = new Dictionary<string, (int Hits, int Total, List<string> Matches)>(StringComparer.OrdinalIgnoreCase);
 
-        var profileHits = profiles.ToDictionary(p => p.Id, p => 0, StringComparer.OrdinalIgnoreCase);
-
-        for (int i = 0; i < keyRegions.Length; i++)
+        foreach (var profile in profiles)
         {
-            var reg = keyRegions[i];
-            if (TryCropRegion(frame, reg.X, reg.Y, reg.W, reg.H, scaleX, scaleY, roiOffsetX, roiOffsetY, out var cropMat))
+            // 获取该乐器专属具有 ExpectedText 的目标（竖笛为数字 1-7，吉他为和弦 C-G7 等）
+            var targets = profile.ExclusiveTargets
+                .Where(t => !string.IsNullOrEmpty(t.ExpectedText) && t.Category != AnchorCategory.Syllable)
+                .ToList();
+
+            if (targets.Count == 0)
             {
-                using (cropMat)
-                {
-                    string text = _ocrEngine!.Recognize(cropMat).Trim();
-                    if (string.IsNullOrEmpty(text)) continue;
+                targets = profile.ExclusiveTargets.Where(t => !string.IsNullOrEmpty(t.ExpectedText)).Take(7).ToList();
+            }
 
-                    foreach (var profile in profiles)
+            int hits = 0;
+            var matchedList = new List<string>();
+            const int pad = 4;
+
+            foreach (var target in targets)
+            {
+                int baseX = Math.Max(0, target.Bounds.X - pad);
+                int baseY = Math.Max(0, target.Bounds.Y - pad);
+                int baseW = target.Bounds.Width + 2 * pad;
+                int baseH = target.Bounds.Height + 2 * pad;
+
+                if (TryCropRegion(frame, baseX, baseY, baseW, baseH, scaleX, scaleY, roiOffsetX, roiOffsetY, out var cropMat))
+                {
+                    using (cropMat)
                     {
-                        bool matched = profile.ExclusiveTargets.Any(t =>
-                            !string.IsNullOrEmpty(t.ExpectedText) &&
-                            (text.Equals(t.ExpectedText, StringComparison.OrdinalIgnoreCase) ||
-                             text.Contains(t.ExpectedText, StringComparison.OrdinalIgnoreCase)));
+                        string text = _ocrEngine!.Recognize(cropMat).Trim();
+                        if (string.IsNullOrEmpty(text)) continue;
+
+                        bool matched = string.Equals(text, target.ExpectedText, StringComparison.OrdinalIgnoreCase) ||
+                                       text.Contains(target.ExpectedText, StringComparison.OrdinalIgnoreCase);
 
                         if (matched)
                         {
-                            profileHits[profile.Id]++;
+                            hits++;
+                            matchedList.Add($"{target.ExpectedText}->{text}");
                         }
                     }
                 }
             }
+
+            profileOcrHits[profile.Id] = (hits, targets.Count, matchedList);
         }
 
         var rankedProfiles = profiles
-            .Select(p => (Profile: p, Hits: profileHits.TryGetValue(p.Id, out int h) ? h : 0))
+            .Select(p =>
+            {
+                var info = profileOcrHits.TryGetValue(p.Id, out var h) ? h : (Hits: 0, Total: 0, Matches: new List<string>());
+                return (Profile: p, Hits: info.Hits, Total: info.Total, Matches: info.Matches);
+            })
             .OrderByDescending(p => p.Hits)
             .ToList();
 
@@ -478,7 +480,7 @@ public sealed class InstrumentDetector : IDisposable
 
             if (best.Hits > secondHits)
             {
-                double ocrConf = (double)best.Hits / (double)keyRegions.Length;
+                double ocrConf = best.Total > 0 ? (double)best.Hits / best.Total : 1.0;
                 double tmplScore = tmplCandidates.FirstOrDefault(c => c.Profile.Id.Equals(best.Profile.Id, StringComparison.OrdinalIgnoreCase)).AvgScore;
 
                 return new InstrumentDetectionResult
@@ -491,16 +493,16 @@ public sealed class InstrumentDetector : IDisposable
                     OcrInvoked = true,
                     OcrConfidence = ocrConf,
                     OcrHits = best.Hits,
-                    OcrTotal = keyRegions.Length,
+                    OcrTotal = best.Total,
                     TemplateConfidence = tmplScore,
                     CombinedConfidence = ocrConf,
                     StatusSummary = $"{best.Profile.DisplayName}: 已就绪 (OCR: {ocrConf:P0})",
-                    Details = $"OCR 复核判定为{best.Profile.DisplayName} (命中数={best.Hits}, 次优命中数={secondHits})"
+                    Details = $"OCR 复核判定为{best.Profile.DisplayName} (命中数={best.Hits}/{best.Total}, 次优命中数={secondHits}, 识别={string.Join(", ", best.Matches)})"
                 };
             }
         }
 
-        string ocrSummary = string.Join(", ", rankedProfiles.Select(p => $"{p.Profile.DisplayName}命中={p.Hits}"));
+        string ocrSummary = string.Join(", ", rankedProfiles.Select(p => $"{p.Profile.DisplayName}命中={p.Hits}/{p.Total}"));
         return new InstrumentDetectionResult
         {
             IsDetected = false,

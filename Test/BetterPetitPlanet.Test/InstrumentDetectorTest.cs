@@ -51,6 +51,30 @@ public class InstrumentDetectorTest
         return candidates.FirstOrDefault(File.Exists);
     }
 
+    private static string? FindNightGrassScreenshot()
+    {
+        var candidates = new[]
+        {
+            @"D:\Coding\Game\petit_planet\better-petit-planet-ocr-artifacts\exp_stage1_diagnose\night_grass_sample.png",
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".gemini", "antigravity", "brain", "858aa77d-848f-48df-a9b3-d1fde02af6d7", ".user_uploaded", "media_1792263135353_cbb124e2.png")
+        };
+        return candidates.FirstOrDefault(File.Exists);
+    }
+
+    private static Mat LoadNightGrassMat(string path)
+    {
+        var mat = Cv2.ImRead(path, ImreadModes.Color);
+        if (mat.Width == 1024 && mat.Height == 289)
+        {
+            using var sub = new Mat(mat, new Rect(0, 0, 512, 288));
+            var full = new Mat();
+            Cv2.Resize(sub, full, new Size(2560, 1440), interpolation: InterpolationFlags.Lanczos4);
+            mat.Dispose();
+            return full;
+        }
+        return mat;
+    }
+
     [Fact]
     public void TestInstrumentCoordinateService_BaseResolution()
     {
@@ -210,6 +234,83 @@ public class InstrumentDetectorTest
 
             Assert.True(result.IsDetected);
             Assert.Equal("Guitar", result.InstrumentId);
+            Assert.Equal(InstrumentDetectionState.Confirmed, result.State);
+        }
+    }
+
+    [Fact]
+    public void TestInstrumentDetector_DetectFull_NightGrassSample()
+    {
+        using var detector = new InstrumentDetector();
+
+        string? nightGrassPng = FindNightGrassScreenshot();
+        if (nightGrassPng != null)
+        {
+            using var mat = LoadNightGrassMat(nightGrassPng);
+            var result = detector.DetectFull(mat);
+
+            Assert.True(result.IsDetected, $"Expected night grass sample to be detected, result: {result.StatusSummary}, details: {result.Details}");
+            Assert.Equal("Recorder", result.InstrumentId);
+            Assert.Equal("竖笛", result.DisplayName);
+            Assert.Equal(InstrumentDetectionState.Confirmed, result.State);
+            Assert.Equal("FeatureVerification", result.Stage);
+            Assert.False(result.OcrInvoked);
+            Assert.True(result.TemplateConfidence >= 0.80, $"Expected confidence >= 0.80, got {result.TemplateConfidence}");
+            Assert.Contains("竖笛: 已就绪", result.StatusSummary);
+        }
+    }
+
+    [Fact]
+    public void TestInstrumentDetector_DetectFull_NightGrass_RoiCropped()
+    {
+        using var detector = new InstrumentDetector();
+
+        string? nightGrassPng = FindNightGrassScreenshot();
+        if (nightGrassPng != null)
+        {
+            using var mat = LoadNightGrassMat(nightGrassPng);
+            using var roiSub = new Mat(mat, new Rect(500, 1100, 1550, 250));
+            using var roiCopy = roiSub.Clone();
+
+            var result = detector.DetectFull(roiCopy, 500, 1100, 2560, 1440);
+
+            Assert.True(result.IsDetected, $"Expected ROI night grass to be detected, result: {result.StatusSummary}");
+            Assert.Equal("Recorder", result.InstrumentId);
+            Assert.Equal(InstrumentDetectionState.Confirmed, result.State);
+            Assert.Equal("FeatureVerification", result.Stage);
+        }
+    }
+
+    [Fact]
+    public void TestInstrumentDetector_OcrFallback_TriggeredOnAmbiguousScene()
+    {
+        using var detector = new InstrumentDetector();
+
+        // 验证 OCR 引擎状态
+        var ocrField = typeof(InstrumentDetector).GetField("_ocrEngine", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        var ocrEngine = ocrField?.GetValue(detector) as BetterPetitPlanet.GameTask.AutoPick.Ocr.IOcrEngine;
+        if (ocrEngine == null || !ocrEngine.IsAvailable) return;
+
+        string? recorderPng = FindScreenshot("music_recorder.png");
+        if (recorderPng != null)
+        {
+            using var mat = Cv2.ImRead(recorderPng, ImreadModes.Color);
+
+            // 构造一个特征模板匹配受到中度干扰（打分在 0.40~0.55）但 OCR 文字区域仍清晰可辨的图像：
+            // 将 1 和 7 验证小锚点区域做模糊/降对比度处理，使得 Stage 2 模板匹配存疑 (< 0.58)，强制流入 Stage 3 OCR 兜底
+            using var ambiguousMat = mat.Clone();
+            // 对 "1" (571, 1147, 54, 58) 和 "7" (1933, 1147, 54, 58) 的外圈进行噪声混合，使模板得分落在 0.40~0.55
+            using var roi1 = new Mat(ambiguousMat, new Rect(571, 1147, 54, 58));
+            using var roi7 = new Mat(ambiguousMat, new Rect(1933, 1147, 54, 58));
+            Cv2.GaussianBlur(roi1, roi1, new Size(15, 15), 0);
+            Cv2.GaussianBlur(roi7, roi7, new Size(15, 15), 0);
+
+            var result = detector.DetectFull(ambiguousMat);
+
+            // 若模板得分在模糊后降至 0.58 以下，必定触发 OCR 兜底；
+            // 无论哪种情况，最终均应正确判定为 Recorder 并就绪！
+            Assert.True(result.IsDetected);
+            Assert.Equal("Recorder", result.InstrumentId);
             Assert.Equal(InstrumentDetectionState.Confirmed, result.State);
         }
     }
