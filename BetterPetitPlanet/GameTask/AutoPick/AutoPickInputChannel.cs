@@ -89,10 +89,13 @@ public sealed class AutoPickInputChannel : IAutoPickInputChannel
             {
                 if (_suppressCheck != null && _suppressCheck())
                 {
+                    _logger?.LogInformation("AutoPickInputChannel: 受到音乐让行抑制，跳过按键发送 '{Key}'", keyName);
                     return;
                 }
 
                 int clampedHold = Math.Clamp(holdDurationMs, 20, 500);
+                string modeDesc = (runInBackground && hwnd != IntPtr.Zero) ? "后台PostMessage" : "前台SendInput";
+                _logger?.LogInformation("AutoPickInputChannel: 正在按下按键 '{Key}' (保持 {HoldMs}ms, 模式: {Mode})", keyName, clampedHold, modeDesc);
 
                 if (_customExecutor != null)
                 {
@@ -109,6 +112,8 @@ public sealed class AutoPickInputChannel : IAutoPickInputChannel
                         await HardwareInputSimulator.SendKeyPressAsync(keyName, clampedHold);
                     }
                 }
+
+                _logger?.LogInformation("AutoPickInputChannel: 已释放按键 '{Key}'，启动冷却计时 ({CooldownMs}ms)", keyName, cooldownMs);
             }
             catch (Exception ex)
             {

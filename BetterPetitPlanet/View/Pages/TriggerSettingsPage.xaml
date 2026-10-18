@@ -69,6 +69,22 @@
                                          IsChecked="{Binding ItemNameRecognitionEnabled, Mode=TwoWay}" />
                     </Grid>
 
+                    <Grid Margin="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Margin="0,0,16,0">
+                            <TextBlock FontWeight="Medium" Text="视觉极速预筛选 (跳过空帧)" />
+                            <TextBlock Margin="0,3,0,0" FontSize="12" TextWrapping="Wrap"
+                                       Foreground="{DynamicResource TextFillColorTertiaryBrush}"
+                                       Text="默认开启。在进行重量级识别前快速检测画面中是否存在交互提示；若遇特殊复杂场景可关闭以直通 OCR 识别。" />
+                        </StackPanel>
+                        <ui:ToggleSwitch Grid.Column="1" Margin="0,0,8,0" VerticalAlignment="Center"
+                                         AutomationProperties.Name="视觉极速预筛选"
+                                         IsChecked="{Binding FastPrescreenEnabled, Mode=TwoWay}" />
+                    </Grid>
+
                     <Separator Margin="-18,0" BorderThickness="0,1,0,0" />
 
                     <!-- 文字识别引擎选择 -->

@@ -5,10 +5,10 @@ namespace BetterPetitPlanet.GameTask.AutoPick;
 
 public static class PetitRoiCalculator
 {
-    // Normalized ROI ratios matching petit_auto_pick with multi-resolution tolerance
-    public const double XMinRatio = 0.660;
-    public const double YMinRatio = 0.570;
-    public const double XMaxRatio = 0.835;
+    // Normalized ROI ratios: captures both the key prompt icon and text pill with multi-resolution tolerance
+    public const double XMinRatio = 0.645;
+    public const double YMinRatio = 0.565;
+    public const double XMaxRatio = 0.810;
     public const double YMaxRatio = 0.660;
 
     public static Rect Calculate(int clientWidth, int clientHeight)

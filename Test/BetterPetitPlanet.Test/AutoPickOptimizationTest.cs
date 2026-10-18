@@ -307,6 +307,108 @@ public class AutoPickOptimizationTest
         Assert.Equal(0, inputChannel.TriggerCallCount);
     }
 
+    [Fact]
+    public void Prescreener_Evaluate_ReturnsRichDiagnostics()
+    {
+        using var empty = new Mat(136, 423, MatType.CV_8UC3, new Scalar(30, 90, 20));
+        var res = AutoPickPrescreener.Evaluate(empty, "F", 0.60);
+
+        Assert.False(res.CanContainPrompt);
+        Assert.Contains("得分不足", res.Reason);
+        Assert.True(res.Score < 0.60);
+    }
+
+    [Fact]
+    public void Prescreener_WithRealFButtonTemplate_MatchesCorrectly()
+    {
+        var tpl = AutoPickPrescreener.Template;
+        Assert.NotNull(tpl);
+        Assert.False(tpl.Empty());
+        Assert.Equal(35, tpl.Cols);
+        Assert.Equal(37, tpl.Rows);
+
+        using var roi = new Mat(136, 423, MatType.CV_8UC3, new Scalar(45, 55, 60)); // Dark brown background
+        using var tplBgr = new Mat();
+        Cv2.CvtColor(tpl, tplBgr, ColorConversionCodes.GRAY2BGR);
+        var targetRect = new OpenCvSharp.Rect(10, 40, tpl.Cols, tpl.Rows);
+        tplBgr.CopyTo(new Mat(roi, targetRect));
+
+        var res = AutoPickPrescreener.Evaluate(roi, "F", 0.60);
+        Assert.True(res.CanContainPrompt);
+        Assert.True(res.Score >= 0.90);
+        Assert.Contains("F键模板命中", res.Reason);
+    }
+
+    [Fact]
+    public void AutoPickTrigger_SessionManagement_AcquiresAndReleasesSession()
+    {
+        var config = new AppConfig();
+        config.AutoPick.Enabled = true;
+        var configService = new TestConfigService(config);
+        var detector = new GameProcessDetector(configService);
+        var dispatcher = new TaskTriggerDispatcher();
+        var taskManager = new GameTaskManager(configService, detector, dispatcher);
+
+        using var trigger = new AutoPickTrigger(
+            configService,
+            detector,
+            new TestOcrEngine(),
+            taskManager: taskManager);
+
+        Assert.True(taskManager.IsConsumerActive("AutoPick"));
+
+        trigger.IsEnabled = false;
+        Assert.False(taskManager.IsConsumerActive("AutoPick"));
+
+        trigger.IsEnabled = true;
+        Assert.True(taskManager.IsConsumerActive("AutoPick"));
+    }
+
+    [Fact]
+    public void AutoPickTrigger_EndToEndWithPrescreenerAndWhitelist_TriggersKey()
+    {
+        var config = new AppConfig();
+        config.General.RunInBackground = true;
+        config.AutoPick.Enabled = true;
+        config.AutoPick.FastPrescreenEnabled = true;
+        config.AutoPick.PrescreenMinScore = 0.60;
+        config.AutoPick.Whitelist = ["拾取"];
+        config.AutoPick.PickKey = "F";
+
+        var configService = new TestConfigService(config);
+        var detector = new GameProcessDetector(configService);
+        var ocrEngine = new TestOcrEngine { RecognizedResult = "拾取" };
+        var inputChannel = new TestInputChannel();
+
+        using var trigger = new AutoPickTrigger(
+            configService,
+            detector,
+            ocrEngine,
+            logger: null,
+            inputChannel: inputChannel);
+
+        // Create a 2560x1440 dummy frame
+        using var frame = new Mat(1440, 2560, MatType.CV_8UC3, new Scalar(40, 50, 45));
+
+        // In the ROI calculated by PetitRoiCalculator (X: [1651, 2074], Y: [814, 950]):
+        // Stamp the F-button template in the search area
+        var tpl = AutoPickPrescreener.Template;
+        using var tplBgr = new Mat();
+        Cv2.CvtColor(tpl, tplBgr, ColorConversionCodes.GRAY2BGR);
+        // Stamp at X: 1670, Y: 840
+        var stampRect = new OpenCvSharp.Rect(1670, 840, tpl.Cols, tpl.Rows);
+        tplBgr.CopyTo(new Mat(frame, stampRect));
+
+        using var content = CreateDummyContent(frame);
+
+        trigger.OnCapture(content);
+
+        // Pre-screen passed -> OCR ran -> Whitelist matched -> Key injected!
+        Assert.Equal(1, ocrEngine.CallCount);
+        Assert.Equal(1, inputChannel.TriggerCallCount);
+        Assert.Equal("F", inputChannel.LastKeyName);
+    }
+
     private sealed class TestConfigService(AppConfig config) : IConfigService
     {
         public AppConfig Config { get; set; } = config;

@@ -23,6 +23,9 @@ public partial class TriggerSettingsPageViewModel : ObservableObject, IDisposabl
     private bool _autoPickEnabled;
 
     [ObservableProperty]
+    private bool _fastPrescreenEnabled = true;
+
+    [ObservableProperty]
     private bool _itemNameRecognitionEnabled;
 
     [ObservableProperty]
@@ -116,6 +119,7 @@ public partial class TriggerSettingsPageViewModel : ObservableObject, IDisposabl
         {
             var cfg = _configService.Config.AutoPick;
             AutoPickEnabled = cfg.Enabled;
+            FastPrescreenEnabled = cfg.FastPrescreenEnabled;
             ItemNameRecognitionEnabled = cfg.ItemNameRecognition.Enabled;
             if (cfg.OcrEngine.StartsWith("Rapid", System.StringComparison.OrdinalIgnoreCase))
             {
@@ -189,6 +193,7 @@ public partial class TriggerSettingsPageViewModel : ObservableObject, IDisposabl
 
         var cfg = _configService.Config.AutoPick;
         cfg.Enabled = AutoPickEnabled;
+        cfg.FastPrescreenEnabled = FastPrescreenEnabled;
         cfg.ItemNameRecognition.Enabled = ItemNameRecognitionEnabled;
         cfg.OcrEngine = SelectedOcrEngine.Replace("*", "").Trim();
         cfg.PickKey = SelectedPickKey;
@@ -254,11 +259,16 @@ public partial class TriggerSettingsPageViewModel : ObservableObject, IDisposabl
         }
 
         SaveToConfig();
-        if (value && _taskManager != null && !_taskManager.IsRunning)
+        if (value)
         {
-            _taskManager.Start();
+            _taskManager?.AcquireSession("AutoPick");
+        }
+        else
+        {
+            _taskManager?.ReleaseSession("AutoPick");
         }
     }
+    partial void OnFastPrescreenEnabledChanged(bool value) { if (!_isLoading) SaveToConfig(); }
     partial void OnSelectedOcrEngineChanged(string value) { if (!_isLoading) SaveToConfig(); }
     partial void OnItemNameRecognitionEnabledChanged(bool value) { if (!_isLoading) SaveToConfig(); }
     partial void OnSelectedPickKeyChanged(string value) { if (!_isLoading) SaveToConfig(); }
