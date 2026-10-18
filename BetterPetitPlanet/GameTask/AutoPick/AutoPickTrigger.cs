@@ -59,7 +59,7 @@ public sealed class AutoPickTrigger : ITaskTrigger
 
     public void OnCapture(CaptureContent content)
     {
-        if (MusicSuppressed || !IsEnabled || content.Frame == null || content.Frame.Empty())
+        if (MusicSuppressed || !IsEnabled || !content.IsValid)
         {
             return;
         }
@@ -73,8 +73,8 @@ public sealed class AutoPickTrigger : ITaskTrigger
             }
 
             // Calculate ROI based on actual captured frame dimensions for resolution & DPI invariance
-            int frameWidth = content.Frame.Cols;
-            int frameHeight = content.Frame.Rows;
+            int frameWidth = content.Width;
+            int frameHeight = content.Height;
             var roiRect = PetitRoiCalculator.Calculate(frameWidth, frameHeight);
             if (roiRect.Width <= 0 || roiRect.Height <= 0)
             {
@@ -86,9 +86,15 @@ public sealed class AutoPickTrigger : ITaskTrigger
             int y = Math.Clamp(roiRect.Y, 0, frameHeight - 1);
             int w = Math.Clamp(roiRect.Width, 1, frameWidth - x);
             int h = Math.Clamp(roiRect.Height, 1, frameHeight - y);
+            var clampedRect = new Rect(x, y, w, h);
 
-            using var roiMat = new Mat(content.Frame, new Rect(x, y, w, h));
-            var recognizedText = _ocrEngine.Recognize(roiMat).Trim();
+            using var roiFrame = content.GetRoi(clampedRect);
+            if (roiFrame == null || roiFrame.Frame.Empty())
+            {
+                return;
+            }
+
+            var recognizedText = _ocrEngine.Recognize(roiFrame.Frame).Trim();
 
             if (string.IsNullOrWhiteSpace(recognizedText))
             {
@@ -145,7 +151,10 @@ public sealed class AutoPickTrigger : ITaskTrigger
             InjectKeyPress(config.PickKey, config.PressDurationMs, content.Hwnd);
 
             // Optional diagnostics only: key injection is already queued above.
-            _itemNameRecognition?.TryQueue(content.Frame);
+            if (content.Frame != null)
+            {
+                _itemNameRecognition?.TryQueue(content.Frame);
+            }
         }
         catch (Exception ex)
         {
