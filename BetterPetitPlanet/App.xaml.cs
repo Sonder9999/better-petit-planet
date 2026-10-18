@@ -81,6 +81,7 @@ public partial class App : Application
             services.AddSingleton<IInstrumentRegistry, InstrumentRegistry>();
             services.AddSingleton<InstrumentCoordinateService>();
             services.AddSingleton<InstrumentDetector>();
+            services.AddSingleton<InstrumentStateMachine>();
             services.AddSingleton<InstrumentDetectorTrigger>();
             services.AddSingleton<KeyInputTransports>();
             services.AddSingleton<PetitScoreParser>();

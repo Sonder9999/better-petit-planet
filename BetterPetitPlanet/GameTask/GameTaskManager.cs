@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
 using System.Threading;
@@ -17,6 +18,9 @@ public sealed class GameTaskManager : IDisposable
     private readonly IConfigService _configService;
     private readonly GameProcessDetector _processDetector;
     private readonly TaskTriggerDispatcher _dispatcher;
+
+    private readonly HashSet<string> _activeConsumers = new(StringComparer.OrdinalIgnoreCase);
+    private readonly object _consumerLock = new();
 
     private CancellationTokenSource? _cts;
     private Task? _captureTask;
@@ -39,8 +43,56 @@ public sealed class GameTaskManager : IDisposable
         _logger = logger;
     }
 
+    /// <summary>
+    /// 多消费者会话声明：指定消费者（如 "AutoPick" 或 "Music"）请求保持画面捕获。
+    /// 只要有任一消费者持有活跃会话，底层截图通道即持续运转；各取所需，互不干扰。
+    /// </summary>
+    public bool AcquireSession(string consumerId)
+    {
+        lock (_consumerLock)
+        {
+            _activeConsumers.Add(consumerId);
+            _logger?.LogInformation("Consumer {Consumer} acquired capture session. Active count: {Count}", consumerId, _activeConsumers.Count);
+            if (!_isRunning)
+            {
+                return Start();
+            }
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// 释放指定消费者的截图会话。
+    /// 仅当所有消费者均释放（计数归零）时，底层截图会话才会真正关闭，绝不破坏其他任务（如停止音乐绝不破坏自动拾取）。
+    /// </summary>
+    public void ReleaseSession(string consumerId)
+    {
+        lock (_consumerLock)
+        {
+            _activeConsumers.Remove(consumerId);
+            _logger?.LogInformation("Consumer {Consumer} released capture session. Remaining count: {Count}", consumerId, _activeConsumers.Count);
+            if (_activeConsumers.Count == 0 && _isRunning)
+            {
+                StopInternal();
+            }
+        }
+    }
+
+    public bool IsConsumerActive(string consumerId)
+    {
+        lock (_consumerLock)
+        {
+            return _activeConsumers.Contains(consumerId);
+        }
+    }
+
     public bool Start()
     {
+        lock (_consumerLock)
+        {
+            _activeConsumers.Add("Default");
+        }
+
         if (_isRunning)
         {
             return true;
@@ -53,6 +105,11 @@ public sealed class GameTaskManager : IDisposable
     /// <summary>Starts capture using the latest non-blocking cached game-window snapshot.</summary>
     public bool StartWithCachedTarget()
     {
+        lock (_consumerLock)
+        {
+            _activeConsumers.Add("Default");
+        }
+
         if (_isRunning) return true;
         return Start(_processDetector.FindMainWindowHandleCached());
     }
@@ -88,7 +145,19 @@ public sealed class GameTaskManager : IDisposable
         }
     }
 
+    /// <summary>
+    /// 全局显式停止所有捕获（例如用户在主界面手动关闭或应用退出）。
+    /// </summary>
     public void Stop()
+    {
+        lock (_consumerLock)
+        {
+            _activeConsumers.Clear();
+        }
+        StopInternal();
+    }
+
+    private void StopInternal()
     {
         if (!_isRunning)
         {
@@ -129,19 +198,27 @@ public sealed class GameTaskManager : IDisposable
                     break;
                 }
 
-                if (_gameCapture != null)
+                if (_gameCapture != null && _gameCapture.IsCapturing)
                 {
-                    using var frame = _gameCapture.Capture();
-                    if (frame != null && !frame.Frame.Empty())
+                    var clientSize = _processDetector.GetClientSize(hwnd);
+                    var windowSize = new OpenCvSharp.Size(clientSize.Width, clientSize.Height);
+
+                    // 使用按需 GPU ROI 直读的 CaptureContent，杜绝每帧 14.7MB 的全屏无谓映射与复制
+                    using var content = new CaptureContent(
+                        frameFactory: () => _gameCapture?.Capture(),
+                        roiCaptureFunc: roi => _gameCapture?.CaptureRoi(roi),
+                        hwnd: hwnd,
+                        clientRect: clientSize,
+                        windowSize: windowSize);
+
+                    if (content.IsValid)
                     {
                         frameCounter++;
                         if (frameCounter == 1 || frameCounter % 300 == 0)
                         {
-                            _logger?.LogDebug("Capture active, processed frame {FrameCount} ({Width}x{Height})", frameCounter, frame.Frame.Width, frame.Frame.Height);
+                            _logger?.LogDebug("Capture active, processed frame {FrameCount} ({Width}x{Height})", frameCounter, clientSize.Width, clientSize.Height);
                         }
 
-                        var clientSize = _processDetector.GetClientSize(hwnd);
-                        using var content = new CaptureContent(frame.Frame.Clone(), hwnd, clientSize);
                         _dispatcher.Dispatch(content);
                     }
                 }

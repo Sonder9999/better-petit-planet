@@ -12,7 +12,7 @@ public sealed class MusicCaptureObserver : ITaskTrigger
 
     public void OnCapture(CaptureContent content)
     {
-        if (content.Frame != null && !content.Frame.Empty())
+        if (content.IsValid || (content.Frame != null && !content.Frame.Empty()))
         {
             FrameObserved?.Invoke(MonotonicMs);
         }

@@ -26,6 +26,7 @@ public sealed class MusicSessionCoordinator : IDisposable
     private readonly MusicReadinessGate _gate;
     private readonly MusicReadinessCoordinator _safety;
     private readonly MusicReadinessOptions _options;
+    private readonly InstrumentStateMachine _stateMachine;
     private readonly MusicTimelineStartControl _starts;
     private readonly Dispatcher? _dispatcher;
     private readonly DispatcherTimer? _timer;
@@ -47,6 +48,7 @@ public sealed class MusicSessionCoordinator : IDisposable
     public MusicInputObserver InputObserver => _input;
     public MusicReadinessGate ReadinessGate => _gate;
     public MusicReadinessOptions ReadinessOptions => _options;
+    public InstrumentStateMachine StateMachine => _stateMachine;
     public MusicTimelineStartControl StartControl => _starts;
 
     public event Action? Changed;
@@ -64,6 +66,7 @@ public sealed class MusicSessionCoordinator : IDisposable
         ILogger<MusicSessionCoordinator>? logger = null,
         MusicReadinessOptions? options = null,
         MusicInputObserver? inputObserver = null,
+        InstrumentStateMachine? stateMachine = null,
         Func<bool>? isGameRunning = null,
         Func<bool>? isGameForeground = null,
         Func<bool>? isCaptureRunning = null,
@@ -86,8 +89,18 @@ public sealed class MusicSessionCoordinator : IDisposable
         _clockNow = clockNow ?? (() => MusicCaptureObserver.MonotonicMs);
 
         _input = inputObserver ?? new MusicInputObserver();
+        _stateMachine = stateMachine ?? new InstrumentStateMachine();
         _gate = new MusicReadinessGate(_options);
+        _gate.StateMachine = _stateMachine;
         _safety = new MusicReadinessCoordinator(_playback.SetReadiness, _input.Clear);
+
+        _stateMachine.InstrumentLost += reason => Post(() =>
+        {
+            Suspend(reason);
+            Status = reason;
+            Changed?.Invoke();
+        });
+        _stateMachine.StateChanged += (_, _) => Post(Tick);
 
         HardwareInputSimulator.PhysicalKeyGuard = (scancode, vk) =>
         {
@@ -113,11 +126,13 @@ public sealed class MusicSessionCoordinator : IDisposable
         }
     }
 
+
     public void Start()
     {
         if (_disposed || _started) return;
         _started = true;
 
+        _capture.AcquireSession("Music");
         _playback.SetReadiness(false, "等待新鲜截图与乐器检测");
         _playback.ConfigurePreparation(_config.Config.Music.PreparationMs);
         _playback.SetAutomaticPlayback(_config.Config.Music.AutomaticPlaybackEnabled);
@@ -161,10 +176,17 @@ public sealed class MusicSessionCoordinator : IDisposable
 
     public bool CancelTimelineStart() => _starts.CancelPending();
 
-    public Task StartTimelineAsync() => _disposed ? Task.CompletedTask : _starts.StartAsync(PrepareSessionAsync);
+    public Task StartTimelineAsync()
+    {
+        _stateMachine.TriggerProbe("开始演奏");
+        return _disposed ? Task.CompletedTask : _starts.StartAsync(PrepareSessionAsync);
+    }
 
-    public Task ToggleTimelineAsync(Func<Task>? prepare = null) =>
-        _disposed ? Task.CompletedTask : _starts.ToggleAsync(prepare ?? PrepareSessionAsync);
+    public Task ToggleTimelineAsync(Func<Task>? prepare = null)
+    {
+        _stateMachine.TriggerProbe("切换演奏");
+        return _disposed ? Task.CompletedTask : _starts.ToggleAsync(prepare ?? PrepareSessionAsync);
+    }
 
     public Task ToggleAutomaticAsync() => _disposed ? Task.CompletedTask : _starts.ToggleAutomaticAsync(async () =>
     {
@@ -209,6 +231,7 @@ public sealed class MusicSessionCoordinator : IDisposable
         CancelTimelineStart();
         _playback.Stop();
         _gate.TargetInstrument = timeline.Metadata?.Instrument;
+        _stateMachine.TriggerProbe("载入曲谱");
         _playback.LoadTimeline(timeline);
         Changed?.Invoke();
     }
@@ -229,12 +252,14 @@ public sealed class MusicSessionCoordinator : IDisposable
     public async Task<bool> WaitForReadinessAsync(CancellationToken cancellation)
     {
         cancellation.ThrowIfCancellationRequested();
-        if (!_isCaptureRunning()) _capture.Start();
+        _capture.AcquireSession("Music");
+        _stateMachine.TriggerProbe("等待就绪");
         if (_config.Config.Music.AutoFocusGameOnPlayback && !_isGameForeground())
         {
             _process.ActivateGameWindow();
         }
         Tick();
+
 
         double deadline = _clockNow() + _options.DetectionFreshnessMs * 2;
         while (!Ready && _clockNow() < deadline)
@@ -318,6 +343,7 @@ public sealed class MusicSessionCoordinator : IDisposable
     private void OnDetection(InstrumentDetectionResult result)
     {
         double received = _clockNow();
+        _stateMachine.ReportDetectionResult(result, received);
         Post(() => _gate.ObserveDetection(result.IsDetected, received, result.InstrumentId, result.DisplayName, result.StatusSummary?.Contains("异常") ?? false));
     }
 
@@ -325,6 +351,19 @@ public sealed class MusicSessionCoordinator : IDisposable
     {
         var previous = _lastNotified;
         _lastNotified = snapshot;
+
+        if (string.Equals(snapshot.State, "playing", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(snapshot.State, "preparing", StringComparison.OrdinalIgnoreCase))
+        {
+            _stateMachine.NotifyPlaybackStarted();
+        }
+        else if (string.Equals(snapshot.State, "stopped", StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(snapshot.State, "paused", StringComparison.OrdinalIgnoreCase))
+        {
+            _stateMachine.NotifyPlaybackStopped();
+        }
+
+
         SessionChanged?.Invoke(snapshot);
 
         if (previous == null || previous.SessionId != snapshot.SessionId || previous.State != snapshot.State ||
@@ -334,6 +373,7 @@ public sealed class MusicSessionCoordinator : IDisposable
             Changed?.Invoke();
         }
     });
+
 
     private void OnAutomaticInput(MusicInputEvent input) => Post(() => InputObserved?.Invoke(input));
 
@@ -373,6 +413,9 @@ public sealed class MusicSessionCoordinator : IDisposable
         _playback.SessionChanged -= OnSession;
         _playback.PlaybackError -= OnError;
         _capture.StateChanged -= OnCaptureState;
+
+        _capture.ReleaseSession("Music");
+        _stateMachine.Dispose();
 
         _pickup.MusicSuppressed = false;
     }

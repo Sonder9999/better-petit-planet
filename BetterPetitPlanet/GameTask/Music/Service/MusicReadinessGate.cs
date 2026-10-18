@@ -27,9 +27,18 @@ public sealed class MusicReadinessGate
     public MusicReadinessOptions Options => _options;
     public bool StableInstrument => _stable;
 
+    public InstrumentStateMachine? StateMachine
+    {
+        get => _stateMachine;
+        set => _stateMachine = value;
+    }
+
+    private InstrumentStateMachine? _stateMachine;
+
     public void Invalidate()
     {
         Reset();
+        _stateMachine?.Reset();
         DetectedInstrumentId = null;
         DetectedDisplayName = null;
         _capture = double.NegativeInfinity;
@@ -47,6 +56,13 @@ public sealed class MusicReadinessGate
 
         _detection = now;
         _error = error;
+
+        _stateMachine?.ReportDetectionResult(new InstrumentDetectionResult
+        {
+            InstrumentId = instrumentId,
+            DisplayName = displayName,
+            State = detected ? InstrumentDetectionState.Confirmed : InstrumentDetectionState.None
+        }, now);
 
         if (error)
         {
@@ -94,11 +110,36 @@ public sealed class MusicReadinessGate
         if (!exists) return Deny("游戏未运行");
         if (!foreground) return Deny("游戏失焦或最小化");
         if (!captureRunning) return Deny("截图已停止");
-        if (now - _capture > _options.CaptureFreshnessMs) return Deny("截图已过期");
+
+        bool hasLease = _stateMachine != null && _stateMachine.HasValidLease(now);
+        int captureFreshness = hasLease
+            ? Math.Max(_options.CaptureFreshnessMs, (int)_stateMachine!.Options.ActiveLeaseDuration.TotalMilliseconds)
+            : _options.CaptureFreshnessMs;
+
+        if (now - _capture > captureFreshness) return Deny("截图已过期");
         if (_error) return Deny("乐器检测异常");
-        if (!exemptDetectionAge && now - _detection > _options.DetectionFreshnessMs) return Deny("检测结果已过期");
+        if (!exemptDetectionAge && !hasLease && now - _detection > _options.DetectionFreshnessMs) return Deny("检测结果已过期");
+
+        if (_stateMachine != null)
+        {
+            if (_stateMachine.CurrentState is InstrumentLifecycleState.Confirmed or InstrumentLifecycleState.Active)
+            {
+                _stable = true;
+                if (!string.IsNullOrWhiteSpace(_stateMachine.ConfirmedInstrumentId))
+                    DetectedInstrumentId = _stateMachine.ConfirmedInstrumentId;
+                if (!string.IsNullOrWhiteSpace(_stateMachine.ConfirmedDisplayName))
+                    DetectedDisplayName = _stateMachine.ConfirmedDisplayName;
+            }
+            else if (_stateMachine.CurrentState == InstrumentLifecycleState.Lost)
+            {
+                _stable = false;
+            }
+        }
+
+
 
         if (!_stable)
+
         {
             string waitTarget = string.IsNullOrWhiteSpace(TargetInstrument) || IsAllInstruments(TargetInstrument)
                 ? "乐器"
