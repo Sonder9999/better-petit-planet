@@ -1,7 +1,6 @@
 using System;
 using System.Diagnostics;
 using System.Linq;
-using System.Threading.Tasks;
 using BetterPetitPlanet.Core.Config;
 using BetterPetitPlanet.Core.Process;
 using BetterPetitPlanet.GameTask.AutoPick.Ocr;
@@ -10,19 +9,33 @@ using OpenCvSharp;
 
 namespace BetterPetitPlanet.GameTask.AutoPick;
 
-public sealed class AutoPickTrigger : ITaskTrigger
+public sealed class AutoPickTrigger : ITaskTrigger, IDisposable
 {
     private readonly ILogger<AutoPickTrigger>? _logger;
     private readonly IConfigService _configService;
     private readonly GameProcessDetector _processDetector;
     private readonly IOcrEngine _ocrEngine;
     private readonly ItemNameRecognitionService? _itemNameRecognition;
+    private readonly IAutoPickInputChannel _inputChannel;
+    private readonly AutoPickStateTracker _stateTracker;
 
-    private long _lastPickTimestamp;
     private int _pickCount;
 
     private volatile bool _musicSuppressed;
-    public bool MusicSuppressed { get => _musicSuppressed; set => _musicSuppressed = value; }
+    public bool MusicSuppressed
+    {
+        get => _musicSuppressed;
+        set
+        {
+            _musicSuppressed = value;
+            if (value)
+            {
+                _inputChannel.ForceReleaseAll();
+                _stateTracker.Reset();
+            }
+        }
+    }
+
     public string Name => "自动拾取";
     private bool _isEnabled;
     public bool IsEnabled
@@ -33,6 +46,11 @@ public sealed class AutoPickTrigger : ITaskTrigger
             if (_isEnabled != value)
             {
                 _isEnabled = value;
+                if (!value)
+                {
+                    _inputChannel.ForceReleaseAll();
+                    _stateTracker.Reset();
+                }
                 StateChanged?.Invoke(_isEnabled);
             }
         }
@@ -46,13 +64,17 @@ public sealed class AutoPickTrigger : ITaskTrigger
         GameProcessDetector processDetector,
         IOcrEngine ocrEngine,
         ILogger<AutoPickTrigger>? logger = null,
-        ItemNameRecognitionService? itemNameRecognition = null)
+        ItemNameRecognitionService? itemNameRecognition = null,
+        IAutoPickInputChannel? inputChannel = null,
+        AutoPickStateTracker? stateTracker = null)
     {
         _configService = configService;
         _processDetector = processDetector;
         _ocrEngine = ocrEngine;
         _logger = logger;
         _itemNameRecognition = itemNameRecognition;
+        _inputChannel = inputChannel ?? new AutoPickInputChannel(logger, () => MusicSuppressed);
+        _stateTracker = stateTracker ?? new AutoPickStateTracker();
 
         _isEnabled = _configService.Config.AutoPick.Enabled;
     }
@@ -68,6 +90,14 @@ public sealed class AutoPickTrigger : ITaskTrigger
         {
             // Foreground check
             if (!_configService.Config.General.RunInBackground && !_processDetector.IsGameForegroundCached())
+            {
+                return;
+            }
+
+            var config = _configService.Config.AutoPick;
+
+            // 1. 若原子按键通道正处于物理按下或执行中，直接跳过当前帧
+            if (_inputChannel.IsBusy)
             {
                 return;
             }
@@ -94,6 +124,30 @@ public sealed class AutoPickTrigger : ITaskTrigger
                 return;
             }
 
+            // 2. 视觉极速预筛选（< 0.05ms）：过滤无提示空帧，避免无脑执行重量级 OCR
+            bool hasVisualPrompt = true;
+            if (config.FastPrescreenEnabled)
+            {
+                hasVisualPrompt = AutoPickPrescreener.CanContainPrompt(
+                    roiFrame.Frame,
+                    config.PickKey,
+                    config.PrescreenMinScore > 0 ? config.PrescreenMinScore : 0.70);
+            }
+
+            // 3. 密集花田连采状态机更新（波形消失下降沿重新上膛机制）
+            bool cooldownReady = _inputChannel.IsCooldownReady(config.CooldownMs);
+            if (!hasVisualPrompt)
+            {
+                _stateTracker.ShouldTrigger(hasPrompt: false, cooldownReady);
+                return;
+            }
+
+            if (!_stateTracker.ShouldTrigger(hasPrompt: true, cooldownReady))
+            {
+                return;
+            }
+
+            // 4. 执行 DirectML OCR 识读文字
             var recognizedText = _ocrEngine.Recognize(roiFrame.Frame).Trim();
 
             if (string.IsNullOrWhiteSpace(recognizedText))
@@ -103,9 +157,7 @@ public sealed class AutoPickTrigger : ITaskTrigger
 
             _logger?.LogDebug("AutoPick OCR detected text: '{Text}'", recognizedText);
 
-            var config = _configService.Config.AutoPick;
-
-            // 1. 黑名单初筛 (Blacklist check: 命中即忽略不触发)
+            // 5. 黑名单初筛 (Blacklist check: 命中即忽略不触发)
             var blacklist = (config.Blacklist != null && config.Blacklist.Count > 0)
                 ? config.Blacklist
                 : ["拾取雪球"];
@@ -118,7 +170,7 @@ public sealed class AutoPickTrigger : ITaskTrigger
                 return;
             }
 
-            // 2. 白名单匹配 (Whitelist check: 未被黑名单拦截且命中白名单)
+            // 6. 白名单匹配 (Whitelist check: 未被黑名单拦截且命中白名单)
             var whitelist = (config.Whitelist != null && config.Whitelist.Count > 0)
                 ? config.Whitelist
                 : (config.Keywords != null && config.Keywords.Count > 0 ? config.Keywords : ["拾取"]);
@@ -134,26 +186,25 @@ public sealed class AutoPickTrigger : ITaskTrigger
                 return;
             }
 
-            // Check cooldown
-            long now = Stopwatch.GetTimestamp();
-            double elapsedMs = (double)(now - _lastPickTimestamp) * 1000 / Stopwatch.Frequency;
-            if (elapsedMs < config.CooldownMs)
+            // 7. 原子串行按键注入（保证 KeyDown -> Hold -> KeyUp 严格时序与松开后冷却起算）
+            bool triggered = _inputChannel.TryTrigger(
+                config.PickKey,
+                config.PressDurationMs,
+                config.CooldownMs,
+                content.Hwnd,
+                _configService.Config.General.RunInBackground);
+
+            if (triggered)
             {
-                return;
-            }
+                _pickCount++;
+                _stateTracker.RecordTrigger();
+                _logger?.LogInformation("AutoPick triggered: '{Text}'. Pick count: {Count}", recognizedText, _pickCount);
 
-            _lastPickTimestamp = now;
-            _pickCount++;
-
-            _logger?.LogInformation("AutoPick triggered: '{Text}'. Pick count: {Count}", recognizedText, _pickCount);
-
-            // Inject key press with duration using hardware scancode
-            InjectKeyPress(config.PickKey, config.PressDurationMs, content.Hwnd);
-
-            // Optional diagnostics only: key injection is already queued above.
-            if (content.Frame != null)
-            {
-                _itemNameRecognition?.TryQueue(content.Frame);
+                // Optional diagnostics only: key injection is already queued above.
+                if (content.Frame != null)
+                {
+                    _itemNameRecognition?.TryQueue(content.Frame);
+                }
             }
         }
         catch (Exception ex)
@@ -162,26 +213,9 @@ public sealed class AutoPickTrigger : ITaskTrigger
         }
     }
 
-    private void InjectKeyPress(string keyName, int holdDurationMs, IntPtr hwnd)
+    public void Dispose()
     {
-        Task.Run(async () =>
-        {
-            try
-            {
-                if (MusicSuppressed) return;
-                if (_configService.Config.General.RunInBackground && hwnd != IntPtr.Zero)
-                {
-                    await HardwareInputSimulator.SendBackgroundKeyPressAsync(hwnd, keyName, holdDurationMs);
-                }
-                else
-                {
-                    await HardwareInputSimulator.SendKeyPressAsync(keyName, holdDurationMs);
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger?.LogError(ex, "Failed to inject key press for AutoPick");
-            }
-        });
+        _inputChannel.Dispose();
+        _stateTracker.Reset();
     }
 }

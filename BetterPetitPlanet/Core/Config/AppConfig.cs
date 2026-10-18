@@ -36,6 +36,8 @@ public sealed class AutoPickConfig
     public double MinConfidence { get; set; } = 0.50;
     public List<string> Whitelist { get; set; } = ["拾取"];
     public List<string> Blacklist { get; set; } = ["拾取雪球"];
+    public bool FastPrescreenEnabled { get; set; } = true;
+    public double PrescreenMinScore { get; set; } = 0.70;
 
     [Newtonsoft.Json.JsonIgnore]
     public List<string> Keywords
